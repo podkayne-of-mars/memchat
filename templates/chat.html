@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+
+{% block title %}Chat — Immortal Chat{% endblock %}
+
+{% block content %}
+<div id="top-bar">
+    <span>Chatting as <strong>{{ user.display_name }}</strong></span>
+    <nav>
+        <a href="/settings">Settings</a>
+        <a href="/debug">Debug</a>
+        <a href="/logout">Switch User</a>
+    </nav>
+</div>
+<div id="chat-container">
+    <div id="messages"></div>
+    <form id="chat-form">
+        <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" />
+        <button type="submit">Send</button>
+    </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/chat.js"></script>
+{% endblock %}

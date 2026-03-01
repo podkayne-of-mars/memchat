@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}Login — Immortal Chat{% endblock %}
+
+{% block content %}
+<div id="login-container">
+    <h1>Immortal Chat</h1>
+
+    {% if error %}
+    <p class="login-error">{{ error }}</p>
+    {% endif %}
+
+    {% if selected_user %}
+    {# Password prompt for a specific user #}
+    <h2>{{ selected_user.display_name }}</h2>
+    <form method="post" action="/login" class="password-form">
+        <input type="hidden" name="user_id" value="{{ selected_user.id }}">
+        <input type="password" name="password" placeholder="Password" autofocus>
+        <button type="submit">Log in</button>
+    </form>
+    <p class="back-link"><a href="/login">&larr; Back</a></p>
+
+    {% else %}
+    {# User selection list #}
+    {% if users %}
+    <h2>Who's chatting?</h2>
+    <div class="user-cards">
+        {% for u in users %}
+        <a href="/login?user_id={{ u.id }}" class="user-card">{{ u.display_name }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <h2>New user</h2>
+    <form method="post" action="/api/users/create-and-login" class="create-user-form">
+        <input type="text" name="display_name" placeholder="Display name" required>
+        <input type="text" name="username" placeholder="Username (short, unique)" required>
+        <input type="password" name="password" placeholder="Password">
+        <button type="submit">Create &amp; start chatting</button>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

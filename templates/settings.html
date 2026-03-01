@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — Immortal Chat{% endblock %}
+
+{% block content %}
+<div id="top-bar">
+    <span>Settings for <strong>{{ user.display_name }}</strong></span>
+    <nav>
+        <a href="/chat">Chat</a>
+        <a href="/debug">Debug</a>
+        <a href="/logout">Switch User</a>
+    </nav>
+</div>
+<div id="settings-container">
+    <h2>Persona</h2>
+    <p class="settings-hint">This is the system prompt that shapes how the AI responds to you.</p>
+    <textarea id="persona-text">{{ persona_text }}</textarea>
+    <div class="settings-actions">
+        <button id="save-persona">Save</button>
+        <span id="save-feedback"></span>
+    </div>
+</div>
+
+<script>
+document.getElementById("save-persona").addEventListener("click", async () => {
+    const text = document.getElementById("persona-text").value;
+    const feedback = document.getElementById("save-feedback");
+    try {
+        const res = await fetch("/api/settings/persona", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ persona_text: text }),
+        });
+        if (res.status === 401) {
+            window.location.href = "/login";
+            return;
+        }
+        if (res.ok) {
+            feedback.textContent = "Saved!";
+            feedback.style.color = "#4caf50";
+        } else {
+            feedback.textContent = "Error saving.";
+            feedback.style.color = "#f5a0a0";
+        }
+    } catch {
+        feedback.textContent = "Connection error.";
+        feedback.style.color = "#f5a0a0";
+    }
+    setTimeout(() => { feedback.textContent = ""; }, 3000);
+});
+</script>
+{% endblock %}

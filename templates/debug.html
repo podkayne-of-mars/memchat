@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Debug — Immortal Chat{% endblock %}
+
+{% block content %}
+<div id="top-bar">
+    <span>Debug — <strong>{{ user.display_name }}</strong></span>
+    <nav>
+        <a href="/chat">Chat</a>
+        <a href="/settings">Settings</a>
+        <a href="/logout">Switch User</a>
+    </nav>
+</div>
+<div style="padding: 1rem; max-width: 1200px; margin: 0 auto;">
+    <h1>Debug Panel</h1>
+
+    <h2>Active Session</h2>
+    {% if session_id %}
+    <table border="1" cellpadding="4" cellspacing="0">
+        <tr><th>Session ID</th><td>{{ session_id }}</td></tr>
+        <tr><th>Input tokens</th><td>{{ token_in }}</td></tr>
+        <tr><th>Output tokens</th><td>{{ token_out }}</td></tr>
+        <tr><th>Total tokens</th><td>{{ token_total }}</td></tr>
+    </table>
+    {% else %}
+    <p>No active session.</p>
+    {% endif %}
+
+    <h2>Current Checkpoint</h2>
+    {% if checkpoint %}
+    <table border="1" cellpadding="4" cellspacing="0">
+        <tr><th>ID</th><td>{{ checkpoint.id }}</td></tr>
+        <tr><th>Created</th><td>{{ checkpoint.created_at }}</td></tr>
+        <tr><th>Active topics</th><td>{{ checkpoint.active_topics or '—' }}</td></tr>
+        <tr><th>Summary</th><td>{{ checkpoint.summary }}</td></tr>
+    </table>
+    {% else %}
+    <p>No checkpoint yet.</p>
+    {% endif %}
+
+    <h2>Knowledge Entries ({{ knowledge|length }})</h2>
+    {% if knowledge %}
+    <table border="1" cellpadding="4" cellspacing="0">
+        <tr>
+            <th>ID</th>
+            <th>Type</th>
+            <th>Topic</th>
+            <th>Content</th>
+            <th>Confidence</th>
+            <th>Status</th>
+            <th>Created</th>
+        </tr>
+        {% for k in knowledge %}
+        <tr>
+            <td>{{ k.id }}</td>
+            <td>{{ k.type }}</td>
+            <td>{{ k.topic }}</td>
+            <td>{{ k.content }}</td>
+            <td>{{ k.confidence }}</td>
+            <td>{{ k.status }}</td>
+            <td>{{ k.created_at }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No knowledge entries.</p>
+    {% endif %}
+
+    <h2>Session History ({{ sessions|length }})</h2>
+    {% if sessions %}
+    <table border="1" cellpadding="4" cellspacing="0">
+        <tr>
+            <th>ID</th>
+            <th>Started</th>
+            <th>Ended</th>
+            <th>End Reason</th>
+            <th>Tokens Used</th>
+        </tr>
+        {% for s in sessions %}
+        <tr>
+            <td style="font-size: 0.8em;">{{ s.id }}</td>
+            <td>{{ s.started_at }}</td>
+            <td>{{ s.ended_at or '—' }}</td>
+            <td>{{ s.end_reason or '—' }}</td>
+            <td>{{ s.tokens_used or '—' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No sessions yet.</p>
+    {% endif %}
+</div>
+{% endblock %}
