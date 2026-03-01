@@ -30,7 +30,7 @@ def retrieve_knowledge(user_id: int, query: str) -> list[dict]:
     if ids:
         entries = get_knowledge_by_ids(ids)
     else:
-        # Fallback: return all active entries (same as old FTS5 fallback)
+        # Fallback: return all active entries if vector search returned nothing
         entries = get_all_active_knowledge(user_id)
         entries = entries[:limit]
 
@@ -76,8 +76,8 @@ def _type_prefix(entry_type: str) -> str:
 def _sanitise_fts_query(query: str) -> str:
     """Clean a user message into something safe for FTS5 MATCH.
 
-    FTS5 MATCH chokes on bare punctuation, unmatched quotes, and operators.
-    We extract just the words and OR them together for broad matching.
+    Legacy — no longer called by retrieve_knowledge() (ChromaDB vector search
+    replaced FTS5 for retrieval). Kept for potential direct FTS5 use.
     """
     # Extract word tokens only
     words = re.findall(r"[a-zA-Z0-9]+", query)

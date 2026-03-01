@@ -70,7 +70,7 @@ A local desktop chat application that presents a continuous, unbroken conversati
 Builds the API payload for each message. Assembles from:
 1. **System prompt** — user's persona file
 2. **Checkpoint** — current "state of the world" summary
-3. **Retrieved knowledge** — entries from the knowledge store relevant to the current message (keyword/FTS)
+3. **Retrieved knowledge** — entries from the knowledge store relevant to the current message (ChromaDB vector search)
 4. **Conversation buffer** — last N message pairs from the conversation log (ensures conversational continuity across invisible session boundaries)
 5. **User's new message**
 
@@ -141,7 +141,7 @@ SQLite tables. Each entry tagged with user_id, type, topic, content, confidence,
 
 **Key design principle:** Nothing gets deleted. Superseded entries get marked as superseded with a reference to what replaced them. Failed approaches stay forever with their failure reasons. This is the "map of where the mines are buried."
 
-SQLite FTS5 (full-text search) handles retrieval and is surprisingly capable for small-to-medium knowledge stores.
+ChromaDB with sentence-transformers (all-MiniLM-L6-v2) handles retrieval via semantic vector search. Knowledge entries are embedded on creation and searched by cosine similarity at query time. SQLite FTS5 indexes are maintained in the schema but are not used for context assembly retrieval.
 
 #### 7. Web Search
 When enabled, Claude can search the web in real-time using Anthropic's built-in web search tool (powered by Brave Search). Results include citations rendered as clickable links. Configurable and optional.
@@ -199,7 +199,8 @@ CREATE TABLE knowledge (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Full-text search index on knowledge
+-- Full-text search index on knowledge (legacy — kept in schema but not used for retrieval;
+-- ChromaDB vector search is the primary retrieval mechanism)
 CREATE VIRTUAL TABLE knowledge_fts USING fts5(
     topic, content, content=knowledge, content_rowid=id
 );
@@ -312,7 +313,7 @@ memchat/
 │   ├── anthropic_client.py  # Anthropic API wrapper
 │   ├── file_read.py         # local file reading capability
 │   ├── url_fetch.py         # URL fetching capability
-│   ├── vector_store.py      # vector search (optional)
+│   ├── vector_store.py      # ChromaDB vector search for knowledge retrieval
 │   └── routes/
 │       ├── __init__.py
 │       ├── chat.py          # chat endpoints (send message, get history)
@@ -342,7 +343,7 @@ memchat/
 
 ### Known Limitations
 
-- **FTS5 retrieval** will get noisy as the knowledge store grows past a few hundred entries. Vector search would improve retrieval for large stores.
+- **Knowledge retrieval** uses ChromaDB vector search for semantic matching. Retrieval quality with very large knowledge stores (thousands of entries) is untested.
 - **Curator quality** is critical. Opus is recommended — Haiku tends to flatten nuance.
 - **Checkpoint drift** is theoretically possible over many months of rewrites. Not yet observed in practice.
 - **No mobile app.** Use the browser on your phone — it works fine.

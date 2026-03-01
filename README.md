@@ -46,7 +46,7 @@ Over time, the AI accumulates genuine understanding of you: your preferences, yo
 │  └───────────────┬───────────────┘  │
 │                  │                   │
 │  ┌───────────────┴───────────────┐  │
-│  │     SQLite + FTS5 Search      │  │
+│  │     SQLite + ChromaDB         │  │
 │  │  messages │ knowledge │ users │  │
 │  └───────────────────────────────┘  │
 └──────────────────┬──────────────────┘
@@ -73,7 +73,7 @@ Each entry is tagged with topic, confidence level, and date. Nothing is ever del
 
 The Curator also writes a narrative checkpoint — a 2-4 sentence summary of the current conversation state.
 
-The next user message starts a fresh API session. The Context Assembler rebuilds from: persona + checkpoint + relevant knowledge entries (via full-text search) + recent messages. The user never notices the transition.
+The next user message starts a fresh API session. The Context Assembler rebuilds from: persona + checkpoint + relevant knowledge entries (via ChromaDB vector search) + recent messages. The user never notices the transition.
 
 ### Knowledge That Persists
 
@@ -137,7 +137,7 @@ Key settings in `config.yaml`:
 
 ## Known Limitations
 
-- **FTS5 retrieval** will get noisy as the knowledge store grows past a few hundred entries. Vector search (ChromaDB) would improve retrieval for large stores. For now, keyword matching works well for small-to-medium knowledge stores.
+- **Knowledge retrieval** uses ChromaDB vector search (sentence-transformers all-MiniLM-L6-v2) for semantic matching. Scales well, but retrieval quality with very large knowledge stores (thousands of entries) is untested.
 - **Curator quality** is critical. We recommend Opus — Haiku tends to flatten nuance and lose subtle reasoning. The debug page lets you inspect and retire bad entries.
 - **Checkpoint drift** is theoretically possible over many months of rewrites. Not yet observed in practice.
 - **No mobile app.** Use the browser on your phone — it works fine.

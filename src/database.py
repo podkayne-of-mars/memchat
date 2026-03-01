@@ -113,13 +113,14 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
 """
 
 FTS_SCHEMA_SQL = """
--- Full-text search index on knowledge
+-- Full-text search index on knowledge (legacy — ChromaDB vector search is the
+-- primary retrieval mechanism; FTS5 is maintained but not used for context assembly)
 CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
     topic, content, content=knowledge, content_rowid=id
 );
 """
 
-# Triggers to keep FTS index in sync with the knowledge table
+# Triggers to keep FTS index in sync with the knowledge table (legacy — see above)
 FTS_TRIGGERS_SQL = """
 CREATE TRIGGER IF NOT EXISTS knowledge_ai AFTER INSERT ON knowledge BEGIN
     INSERT INTO knowledge_fts(rowid, topic, content)
@@ -342,7 +343,8 @@ def save_knowledge(
 
 
 def search_knowledge(user_id: int, query: str, limit: int = 30) -> list[dict]:
-    """Full-text search across knowledge entries for a user."""
+    """Full-text search across knowledge entries for a user (legacy — not used
+    for context assembly; ChromaDB vector search in knowledge.py is primary)."""
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT k.* FROM knowledge k
