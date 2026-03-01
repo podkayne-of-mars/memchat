@@ -1,4 +1,4 @@
-# Project: Immortal Chat
+# Project: Memchat
 ## A Stateless Chat Client That Never Forgets
 
 ### Overview
@@ -34,7 +34,7 @@ A local desktop chat application that presents a continuous, unbroken conversati
 │                                                   │
 │  ┌─────────────┐  ┌──────────────┐  ┌─────────┐ │
 │  │   Context    │  │    Token     │  │ Curator │ │
-│  │  Assembler   │  │   Counter    │  │         │ │
+│  │  Assembler   │  │   Counter    │  │ (Opus)  │ │
 │  └──────┬──────┘  └──────┬───────┘  └────┬────┘ │
 │         │                │               │       │
 │  ┌──────┴────────────────┴───────────────┴────┐  │
@@ -48,7 +48,6 @@ A local desktop chat application that presents a continuous, unbroken conversati
 │  │              Data Layer                     │  │
 │  │  SQLite: conversations, knowledge,          │  │
 │  │          checkpoints, users, personas       │  │
-│  │  (ChromaDB: vector search - Phase 2)        │  │
 │  └────────────────────────────────────────────┘  │
 └──────────────────────┬──────────────────────────┘
                        │ HTTPS
@@ -71,7 +70,7 @@ A local desktop chat application that presents a continuous, unbroken conversati
 Builds the API payload for each message. Assembles from:
 1. **System prompt** — user's persona file
 2. **Checkpoint** — current "state of the world" summary
-3. **Retrieved knowledge** — entries from the knowledge store relevant to the current message (keyword/FTS initially, vector search Phase 2)
+3. **Retrieved knowledge** — entries from the knowledge store relevant to the current message (keyword/FTS)
 4. **Conversation buffer** — last N message pairs from the conversation log (ensures conversational continuity across invisible session boundaries)
 5. **User's new message**
 
@@ -102,7 +101,7 @@ Orchestrates the invisible handover:
 **Critical requirement:** The user must never notice the handover. Response time should feel normal. The curator call happens in the background or is fast enough to be imperceptible.
 
 #### 5. Curator
-A separate API call (or local LLM call) with a structured extraction prompt.
+A separate API call using Opus for high-quality extraction.
 
 **Input:** The current conversation context (or the portion since last curation)
 
@@ -135,17 +134,23 @@ A separate API call (or local LLM call) with a structured extraction prompt.
 }
 ```
 
-**Curator options (decide in Phase 1):**
-- Anthropic API using a cheaper/faster model (Haiku) — simplest, small cost
-- Local LLM (Llama/Mistral via Ollama) — no API cost, needs decent hardware
-- Same model as conversation (Sonnet/Opus) — most expensive, best quality
+**Curator model:** Opus is recommended. Haiku is cheaper but tends to flatten nuance and lose subtle reasoning. The quality of extraction is the critical bottleneck for the entire memory system — this is not the place to economise.
 
 #### 6. Knowledge Store
-SQLite tables initially. Each entry tagged with user_id, type, topic, content, confidence, timestamps, and supersedes references.
+SQLite tables. Each entry tagged with user_id, type, topic, content, confidence, timestamps, and supersedes references.
 
 **Key design principle:** Nothing gets deleted. Superseded entries get marked as superseded with a reference to what replaced them. Failed approaches stay forever with their failure reasons. This is the "map of where the mines are buried."
 
-Phase 2 adds ChromaDB vector embeddings of knowledge entries for semantic search. Phase 1 uses SQLite FTS5 (full-text search) which is surprisingly capable.
+SQLite FTS5 (full-text search) handles retrieval and is surprisingly capable for small-to-medium knowledge stores.
+
+#### 7. Web Search
+When enabled, Claude can search the web in real-time using Anthropic's built-in web search tool (powered by Brave Search). Results include citations rendered as clickable links. Configurable and optional.
+
+#### 8. URL Reading
+Claude can fetch and read web pages directly when you share a URL. Useful for discussing articles, documentation, or any web content without copy-pasting.
+
+#### 9. Local File Reading
+Claude can read files from your local machine when you provide a path. Useful for reviewing code, configs, logs, or documents without pasting content into chat.
 
 ---
 
@@ -225,7 +230,7 @@ CREATE TABLE sessions (
 ### Multi-User Design
 
 - Simple login page: pick username or enter new one
-- Session cookies for browser persistence (no passwords Phase 1, optional Phase 2)
+- Session cookies for browser persistence
 - All queries scoped by user_id
 - Each user has independent: persona, conversation history, knowledge store, checkpoint
 - Curator runs per-user
@@ -237,29 +242,23 @@ CREATE TABLE sessions (
 
 Each user gets a persona that tells Claude who it's talking to and how to behave.
 
-**Example — Allan's SF Discussion persona:**
+**Example — Technical discussion persona:**
 ```
-You are engaged in an ongoing conversation with Allan about science fiction,
-literature, and related topics. Allan is an experienced reader with particular
-interests in Heinlein, Douglas Adams, Terry Pratchett, and classic space opera
-(E.E. "Doc" Smith). He has strong opinions, appreciates direct disagreement,
-dislikes obvious flattery, and communicates with Australian vernacular mixed
-with literary references. He's a ham radio operator and has deep appreciation
-for Japanese culture.
+You are engaged in an ongoing conversation with [Name] about software development,
+technology, and related topics. [Name] is an experienced developer with particular
+interests in [areas]. They have strong opinions, appreciate direct disagreement,
+and dislike obvious flattery.
 
-Treat this as a continuing conversation between friends. Be opinionated.
+Treat this as a continuing conversation between colleagues. Be opinionated.
 Push back when you disagree. Reference previous discussions naturally.
 ```
 
-**Example — Wife's E-commerce persona:**
+**Example — Business advisor persona:**
 ```
-You are a business advisor in an ongoing conversation with [Name] about her
-e-commerce businesses. She runs Etsy and Shopify shops primarily selling
-custom dog tags and jewellery, and is exploring diversification into new
-product lines. She has a background in electrical engineering and quantity
-surveying. Be practical and direct. Remember previous business discussions,
-decisions made, and ideas explored (including ones that were rejected and why).
-Focus on actionable advice grounded in her existing capabilities and market.
+You are a business advisor in an ongoing conversation with [Name] about their
+e-commerce businesses. Be practical and direct. Remember previous business
+discussions, decisions made, and ideas explored (including ones that were
+rejected and why). Focus on actionable advice.
 ```
 
 Personas are editable through the UI settings page.
@@ -276,8 +275,8 @@ server:
 
 anthropic:
   api_key: "${ANTHROPIC_API_KEY}"  # env var, never in config file
-  conversation_model: "claude-sonnet-4-20250514"  # main chat model
-  curator_model: "claude-haiku-4-5-20251001"      # cheaper model for extraction
+  conversation_model: "claude-opus-4-5-20251101"   # main chat model
+  curator_model: "claude-opus-4-5-20251101"        # extraction model (Opus recommended)
   max_context_tokens: 200000       # model context window
   handover_threshold: 0.70         # trigger curator at 70% usage
 
@@ -285,12 +284,8 @@ conversation:
   buffer_messages: 20              # recent messages to carry across handovers
   max_knowledge_entries: 30        # max retrieved knowledge entries per context
 
-curator:
-  backend: "anthropic"             # or "local" for Ollama
-  local_model: "mistral"           # if backend is "local"
-
 database:
-  path: "./data/immortalchat.db"   # SQLite database location
+  path: "./data/memchat.db"        # SQLite database location
 ```
 
 ---
@@ -298,13 +293,11 @@ database:
 ### Project Structure
 
 ```
-immortal-chat/
+memchat/
 ├── README.md
 ├── PROJECT_SPEC.md          # this file
 ├── requirements.txt
 ├── config.yaml
-├── docker-compose.yaml      # for later containerised deployment
-├── Dockerfile               # for later containerised deployment
 ├── src/
 │   ├── __init__.py
 │   ├── main.py              # FastAPI app entry point
@@ -314,10 +307,12 @@ immortal-chat/
 │   ├── auth.py              # simple user auth/session management
 │   ├── assembler.py         # context assembly logic
 │   ├── counter.py           # token counting
-│   ├── session_manager.py   # session lifecycle, handover orchestration
 │   ├── curator.py           # knowledge extraction prompts and processing
 │   ├── knowledge.py         # knowledge store queries and management
 │   ├── anthropic_client.py  # Anthropic API wrapper
+│   ├── file_read.py         # local file reading capability
+│   ├── url_fetch.py         # URL fetching capability
+│   ├── vector_store.py      # vector search (optional)
 │   └── routes/
 │       ├── __init__.py
 │       ├── chat.py          # chat endpoints (send message, get history)
@@ -345,75 +340,35 @@ immortal-chat/
 
 ---
 
-### Build Phases
+### Known Limitations
 
-#### Phase 1: Minimum Viable Chat (MVP)
-Get a working chat loop with invisible session management.
-
-1. **Database setup** — SQLite schema, basic CRUD operations
-2. **FastAPI skeleton** — app startup, basic routes, static file serving
-3. **Chat frontend** — simple message display and input
-4. **Anthropic client** — send messages, receive responses, streaming
-5. **Basic context assembly** — persona + conversation buffer + new message
-6. **Token counting** — track usage, flag threshold
-7. **Session manager** — invisible handover (curator writes checkpoint, fresh session starts)
-8. **Curator** — basic extraction prompt, writes to knowledge table
-9. **Knowledge retrieval** — FTS5 search, inject relevant entries into context
-
-**Done when:** You can have a multi-session conversation where Claude remembers things from previous sessions without you doing anything manually.
-
-#### Phase 2: Multi-User and Polish
-1. **User authentication** — login page, session cookies, user-scoped queries
-2. **Persona editing** — settings page for editing persona text
-3. **Conversation browser** — scroll back through full history in the UI
-4. **Knowledge viewer** — see what the curator has extracted (optional, for debugging/trust)
-5. **Streaming responses** — SSE or WebSocket for token-by-token response display
-
-#### Phase 3: Smart Retrieval
-1. **ChromaDB integration** — vector store for knowledge entries
-2. **Local embeddings** — sentence-transformers for generating vectors
-3. **Hybrid search** — combine FTS5 keyword results with vector similarity
-4. **Retrieval tuning** — adjust how many entries, relevance thresholds
-
-#### Phase 4: Deployment
-1. **Dockerfile** — containerise the application
-2. **Docker Compose** — app + volume mounts for data persistence
-3. **Deployment docs** — instructions for Pi 5, mini PC, or capable NAS
-4. **Backup strategy** — script to backup SQLite DB to NAS share
+- **FTS5 retrieval** will get noisy as the knowledge store grows past a few hundred entries. Vector search would improve retrieval for large stores.
+- **Curator quality** is critical. Opus is recommended — Haiku tends to flatten nuance.
+- **Checkpoint drift** is theoretically possible over many months of rewrites. Not yet observed in practice.
+- **No mobile app.** Use the browser on your phone — it works fine.
+- **Passwords are basic.** SHA-256, no salt. This is "don't accidentally open each other's chat" security, not "defend against attackers" security.
 
 ---
 
 ### Open Questions
 
-1. **Streaming:** Do we stream Claude's responses token-by-token to the UI, or wait for complete response? Streaming feels better but adds WebSocket complexity. Decide in Phase 1.
+1. **Knowledge decay:** Do old, unreferenced knowledge entries eventually get deprioritised in retrieval? Or is everything equal? Currently everything equal.
 
-2. **Curator timing:** Does the curator run synchronously (user waits slightly longer for next response) or asynchronously (fires in background, next message uses stale context briefly)? Synchronous is simpler and safer.
-
-3. **Conversation buffer size:** 20 messages is a guess. May need tuning. Too few and Claude loses conversational thread. Too many and we waste context on old chat instead of knowledge.
-
-4. **Knowledge decay:** Do old, unreferenced knowledge entries eventually get deprioritised in retrieval? Or is everything equal? Start with everything equal, tune later.
-
-5. **Curator quality:** How much do we trust unsupervised extraction? Start with logging curator output visibly in a debug panel so we can spot problems, but don't require manual approval.
-
-6. **Local curator LLM:** Worth the complexity of running Ollama? Or just use Haiku and accept the small API cost? Decide based on actual usage costs after Phase 1.
+2. **Conversation buffer size:** 20 messages is a starting point. May need tuning. Too few and Claude loses conversational thread. Too many and we waste context on old chat instead of knowledge.
 
 ---
 
-### Non-Goals (for now)
+### Non-Goals
 
 - Mobile app (browser on phone works fine)
 - Cloud deployment
 - End-to-end encryption (it's your local network)
 - Voice input/output
 - Image generation or multimodal
-- Integration with external tools (Shopify API, etc.) — future possibility
-- Plugin system — build it monolithic first
+- Plugin system
 
 ---
 
 ### Name
 
-Working title: **Immortal Chat**
-
-Alternatives considered: Endless Thread, Long Memory, The Conversation, Continuity.
-Open to better ideas. Allan will probably name it something from a Heinlein novel anyway.
+**Memchat** — chat with memory.

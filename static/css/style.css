@@ -119,6 +119,23 @@ body {
     margin-right: auto;
 }
 
+.message a {
+    color: #6fa8dc;
+    text-decoration: underline;
+}
+
+.message a:hover {
+    color: #a4c8f0;
+}
+
+/* Web search indicator */
+.web-search-indicator {
+    color: #8899bb;
+    font-size: 0.85em;
+    font-style: italic;
+    animation: pulse 1.2s ease-in-out infinite;
+}
+
 .message.assistant:empty::after {
     content: "\25CF  \25CF  \25CF";
     opacity: 0.4;

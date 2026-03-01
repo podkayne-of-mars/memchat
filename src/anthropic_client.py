@@ -25,10 +25,15 @@ class AnthropicError(Exception):
 @dataclass
 class StreamDelta:
     """A chunk of streamed response."""
-    type: str          # "text", "done", "error"
+    type: str          # "text", "done", "error", "web_search", "tool_use"
     text: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
+    stop_reason: str = ""
+    # Client-side tool use fields
+    tool_use_id: str = ""
+    tool_name: str = ""
+    tool_input: dict | None = None
 
 
 async def stream_message(
@@ -36,6 +41,7 @@ async def stream_message(
     system: str | None = None,
     model: str | None = None,
     max_tokens: int = 8192,
+    tools: list[dict] | None = None,
 ) -> AsyncGenerator[StreamDelta, None]:
     """Stream a response from the Anthropic Messages API.
 
@@ -49,6 +55,7 @@ async def stream_message(
         system: Optional system prompt string.
         model: Model ID override. Defaults to config conversation_model.
         max_tokens: Max tokens in the response.
+        tools: Optional list of tool definitions (e.g. web search).
     """
     cfg = get_config().anthropic
 
@@ -73,6 +80,8 @@ async def stream_message(
     }
     if system:
         body["system"] = system
+    if tools:
+        body["tools"] = tools
 
     input_tokens = 0
     output_tokens = 0
@@ -92,7 +101,15 @@ async def stream_message(
                     return
 
                 # Parse SSE stream
+                # Track content block types so we only yield text from text blocks
+                # (web search produces server_tool_use / web_search_tool_result blocks)
                 event_type = ""
+                current_block_type = ""  # "text", "server_tool", or "tool_use"
+                # Client-side tool_use tracking
+                tool_use_id = ""
+                tool_use_name = ""
+                tool_input_chunks: list[str] = []
+                stop_reason = ""
                 async for line in response.aiter_lines():
                     if line.startswith("event: "):
                         event_type = line[7:]
@@ -113,14 +130,58 @@ async def stream_message(
                         usage = data.get("message", {}).get("usage", {})
                         input_tokens = usage.get("input_tokens", 0)
 
+                    elif msg_type == "content_block_start":
+                        block = data.get("content_block", {})
+                        block_type = block.get("type", "")
+                        if block_type == "text":
+                            current_block_type = "text"
+                        elif block_type == "server_tool_use":
+                            current_block_type = "server_tool"
+                            yield StreamDelta(type="web_search")
+                        elif block_type == "tool_use":
+                            current_block_type = "tool_use"
+                            tool_use_id = block.get("id", "")
+                            tool_use_name = block.get("name", "")
+                            tool_input_chunks = []
+                        else:
+                            current_block_type = "other"
+
                     elif msg_type == "content_block_delta":
                         delta = data.get("delta", {})
-                        if delta.get("type") == "text_delta":
-                            yield StreamDelta(type="text", text=delta["text"])
+                        if current_block_type == "text":
+                            if delta.get("type") == "text_delta":
+                                yield StreamDelta(type="text", text=delta["text"])
+                        elif current_block_type == "tool_use":
+                            if delta.get("type") == "input_json_delta":
+                                tool_input_chunks.append(delta.get("partial_json", ""))
+
+                    elif msg_type == "content_block_stop":
+                        if current_block_type == "tool_use":
+                            # Parse accumulated JSON and yield the tool_use delta
+                            raw_json = "".join(tool_input_chunks)
+                            try:
+                                tool_input = json.loads(raw_json) if raw_json else {}
+                            except json.JSONDecodeError:
+                                tool_input = {}
+                                logger.warning("Failed to parse tool input JSON: %s", raw_json[:200])
+                            yield StreamDelta(
+                                type="tool_use",
+                                tool_use_id=tool_use_id,
+                                tool_name=tool_use_name,
+                                tool_input=tool_input,
+                            )
+                            tool_use_id = ""
+                            tool_use_name = ""
+                            tool_input_chunks = []
+                        current_block_type = ""
 
                     elif msg_type == "message_delta":
                         usage = data.get("usage", {})
                         output_tokens = usage.get("output_tokens", 0)
+                        stop = data.get("delta", {}).get("stop_reason", "")
+                        stop_reason = stop
+                        if stop == "pause_turn":
+                            logger.debug("Web search pause_turn received")
 
                     elif msg_type == "error":
                         err = data.get("error", {})
@@ -134,6 +195,7 @@ async def stream_message(
             type="done",
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            stop_reason=stop_reason,
         )
 
     except httpx.ConnectError:

@@ -4,36 +4,33 @@ import logging
 import re
 
 from src.config import get_config
-from src.database import get_all_active_knowledge, search_knowledge as fts_search
+from src.database import get_all_active_knowledge, get_knowledge_by_ids
+from src.vector_store import search_knowledge as vector_search
 
 logger = logging.getLogger(__name__)
 
 
 def retrieve_knowledge(user_id: int, query: str) -> list[dict]:
-    """Search for relevant active knowledge entries using FTS5.
+    """Search for relevant knowledge entries using ChromaDB vector similarity.
 
-    Falls back to returning all active entries (most recent first) if the
-    FTS query fails — FTS5 MATCH syntax can choke on special characters.
+    Falls back to returning all active entries if the vector store returns
+    nothing (e.g. empty collection, no matches above threshold).
 
-    Returns entries ordered by relevance, limited to max_knowledge_entries
-    from config.
+    Returns entries ordered by similarity, limited to max_knowledge_entries.
     """
     cfg = get_config()
     limit = cfg.conversation.max_knowledge_entries
 
-    # Sanitise the query for FTS5 — strip characters that break MATCH syntax
-    clean = _sanitise_fts_query(query)
-
-    if not clean:
-        # Nothing searchable after sanitisation — return recent entries
-        entries = get_all_active_knowledge(user_id)
-        return entries[:limit]
-
     try:
-        entries = fts_search(user_id, clean, limit=limit)
+        ids = vector_search(user_id, query, n_results=limit)
     except Exception as exc:
-        # FTS5 can fail on weird query syntax — fall back gracefully
-        logger.warning("FTS5 search failed for query '%s': %s. Falling back to all entries.", clean, exc)
+        logger.warning("Vector search failed: %s. Falling back to all entries.", exc)
+        ids = []
+
+    if ids:
+        entries = get_knowledge_by_ids(ids)
+    else:
+        # Fallback: return all active entries (same as old FTS5 fallback)
         entries = get_all_active_knowledge(user_id)
         entries = entries[:limit]
 

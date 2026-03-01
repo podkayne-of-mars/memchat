@@ -1,13 +1,14 @@
 """Context assembler — builds the API payload for each message.
 
 Priority order (spec §2):
-  1. System prompt (persona) — always, non-negotiable
-  2. Checkpoint — always, if one exists
-  3. Knowledge entries — relevant entries from knowledge store
-  4. Conversation buffer — last N messages, most recent first fill
-  5. New user message — always last
+  1. System prompt — hardcoded operating instructions, always first
+  2. Persona — user-editable personality/style, non-negotiable
+  3. Checkpoint — always, if one exists
+  4. Knowledge entries — relevant entries from knowledge store
+  5. Conversation buffer — last N messages, most recent first fill
+  6. New user message — always last
 
-Token budget: persona + checkpoint + new message are non-negotiable.
+Token budget: system prompt + persona + checkpoint + new message are non-negotiable.
 Remaining budget is shared between knowledge and conversation buffer.
 Knowledge is filled first (higher priority), buffer gets what's left.
 """
@@ -22,6 +23,7 @@ from src.database import (
     get_recent_messages,
 )
 from src.knowledge import retrieve_knowledge, format_knowledge_block
+from src.system_prompt import SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +32,20 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
     """Assemble the full context for an API call.
 
     Returns (system_prompt, messages_list) ready to pass to the Anthropic client.
-    The system prompt combines persona + checkpoint + knowledge.
+    The system prompt combines: system instructions + persona + checkpoint + knowledge.
     The messages list contains the conversation buffer + new user message.
     """
     cfg = get_config()
     max_input = int(cfg.anthropic.max_context_tokens * cfg.anthropic.handover_threshold)
 
-    # --- 1. Persona (non-negotiable) ---
+    # --- 1. System prompt (hardcoded, non-negotiable) ---
+    # Always first — core operating instructions
+
+    # --- 2. Persona (user-editable, non-negotiable) ---
     persona = get_active_persona(user_id)
     persona_text = persona["persona_text"] if persona else None
 
-    # --- 2. Checkpoint (non-negotiable if exists) ---
+    # --- 3. Checkpoint (non-negotiable if exists) ---
     checkpoint = get_active_checkpoint(user_id)
     checkpoint_text = None
     if checkpoint:
@@ -50,13 +55,13 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
             checkpoint_text += f"\n[Active topics: {topics}]"
 
     # --- Account for non-negotiable tokens ---
-    # Build the base system prompt (persona + checkpoint) to count it
-    base_system_parts = []
+    # Build the base system prompt (system + persona + checkpoint) to count it
+    base_system_parts = [SYSTEM_PROMPT]
     if persona_text:
         base_system_parts.append(persona_text)
     if checkpoint_text:
         base_system_parts.append(checkpoint_text)
-    base_system = "\n\n".join(base_system_parts) if base_system_parts else ""
+    base_system = "\n\n".join(base_system_parts)
 
     used = 0
     if base_system:
@@ -69,7 +74,7 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
 
     remaining = max_input - used
 
-    # --- 3. Knowledge entries — fill from remaining budget ---
+    # --- 4. Knowledge entries — fill from remaining budget ---
     entries = retrieve_knowledge(user_id, new_message)
     knowledge_block = ""
     knowledge_tokens = 0
@@ -87,15 +92,15 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
             knowledge_block = _fit_knowledge_to_budget(entries, remaining)
             knowledge_tokens = count_text(knowledge_block) if knowledge_block else 0
 
-    # Build the final system prompt: persona + checkpoint + knowledge
-    system_parts = []
+    # Build the final system prompt: system instructions + persona + checkpoint + knowledge
+    system_parts = [SYSTEM_PROMPT]
     if persona_text:
         system_parts.append(persona_text)
     if checkpoint_text:
         system_parts.append(checkpoint_text)
     if knowledge_block:
         system_parts.append(knowledge_block)
-    system = "\n\n".join(system_parts) if system_parts else None
+    system = "\n\n".join(system_parts)
 
     # Recalculate used with knowledge included
     used = 0
@@ -106,7 +111,7 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
 
     budget_for_buffer = max_input - used
 
-    # --- 4. Conversation buffer — fill newest-first within remaining budget ---
+    # --- 5. Conversation buffer — fill newest-first within remaining budget ---
     buffer_size = cfg.conversation.buffer_messages
     recent = get_recent_messages(user_id, limit=buffer_size)
 
@@ -114,6 +119,12 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
         msg for msg in recent
         if msg["role"] in ("user", "assistant")
     ]
+
+    # The new message was already saved to DB before build_context() is called,
+    # so it may appear as the last item in recent. Drop it to avoid duplication
+    # — it gets appended explicitly as step 6 below.
+    if candidates and candidates[-1]["role"] == "user" and candidates[-1]["content"] == new_message:
+        candidates = candidates[:-1]
 
     messages: list[dict] = []
     buffer_tokens = 0
@@ -127,7 +138,7 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
 
     messages.reverse()
 
-    # --- 5. New user message — always last ---
+    # --- 6. New user message — always last ---
     messages.append({"role": "user", "content": new_message})
 
     total_tokens = used + buffer_tokens

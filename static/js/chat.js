@@ -10,10 +10,40 @@ document.addEventListener("DOMContentLoaded", () => {
     // Load existing messages on page load
     loadHistory();
 
+    function renderMarkdownLinks(text) {
+        // Convert [text](url) to clickable <a> tags, escaping everything else
+        const parts = [];
+        let last = 0;
+        const re = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            if (m.index > last) {
+                const span = document.createElement("span");
+                span.textContent = text.slice(last, m.index);
+                parts.push(span);
+            }
+            const a = document.createElement("a");
+            a.href = m[2];
+            a.textContent = m[1];
+            a.target = "_blank";
+            a.rel = "noopener noreferrer";
+            parts.push(a);
+            last = m.index + m[0].length;
+        }
+        if (last < text.length) {
+            const span = document.createElement("span");
+            span.textContent = text.slice(last);
+            parts.push(span);
+        }
+        return parts;
+    }
+
     function addMessage(role, content) {
         const div = document.createElement("div");
         div.className = `message ${role}`;
-        div.textContent = content;
+        for (const node of renderMarkdownLinks(content)) {
+            div.appendChild(node);
+        }
         messagesDiv.appendChild(div);
         scrollToBottom();
         return div;
@@ -113,14 +143,44 @@ document.addEventListener("DOMContentLoaded", () => {
                         continue;
                     }
 
-                    if (event.type === "token") {
+                    if (event.type === "web_search") {
+                        // Show searching indicator before response text
+                        const indicator = document.createElement("div");
+                        indicator.className = "web-search-indicator";
+                        indicator.textContent = "Searching the web\u2026";
+                        bubble.appendChild(indicator);
+                        scrollToBottom();
+                    } else if (event.type === "fetching_url") {
+                        // Show URL fetch indicator
+                        const indicator = document.createElement("div");
+                        indicator.className = "web-search-indicator";
+                        indicator.textContent = "Reading URL\u2026";
+                        bubble.appendChild(indicator);
+                        scrollToBottom();
+                    } else if (event.type === "reading_file") {
+                        // Show file read indicator
+                        const indicator = document.createElement("div");
+                        indicator.className = "web-search-indicator";
+                        indicator.textContent = "Reading file\u2026";
+                        bubble.appendChild(indicator);
+                        scrollToBottom();
+                    } else if (event.type === "token") {
+                        // Remove any status indicators once text starts arriving
+                        for (const ind of bubble.querySelectorAll(".web-search-indicator")) {
+                            ind.remove();
+                        }
                         bubble.textContent += event.text;
                         scrollToBottom();
                     } else if (event.type === "error") {
                         bubble.textContent += event.detail || "Unknown error";
                         bubble.className = "message error";
                     } else if (event.type === "done") {
-                        // Stream complete
+                        // Convert markdown links to clickable <a> tags
+                        const raw = bubble.textContent;
+                        bubble.textContent = "";
+                        for (const node of renderMarkdownLinks(raw)) {
+                            bubble.appendChild(node);
+                        }
                     }
                 }
             }

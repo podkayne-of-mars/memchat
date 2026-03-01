@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from src.anthropic_client import stream_message
 from src.assembler import build_context
 from src.auth import get_current_user_id, require_login
+from src.config import get_config
 from src.counter import check_threshold
 from src.curator import curate_session
 from src.database import (
@@ -22,6 +23,8 @@ from src.database import (
     save_message,
 )
 from src.models import ChatRequest
+from src.file_read import read_file
+from src.url_fetch import fetch_url
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +106,14 @@ async def send_message(req: ChatRequest, request: Request):
     save_message(user_id, "user", req.message, session_id)
 
     # Build context via assembler
-    system, messages = build_context(user_id, req.message)
+    try:
+        system, messages = build_context(user_id, req.message)
+    except Exception as exc:
+        logger.exception("build_context failed")
+        return StreamingResponse(
+            _error_stream(f"Context build failed: {exc}"),
+            media_type="text/event-stream",
+        )
 
     return StreamingResponse(
         _chat_stream(user_id, session_id, system, messages),
@@ -115,44 +125,187 @@ async def send_message(req: ChatRequest, request: Request):
     )
 
 
+def _build_tools() -> list[dict] | None:
+    """Build the tools list from config."""
+    cfg = get_config().anthropic
+    tools = []
+    if cfg.web_search:
+        tools.append({
+            "type": "web_search_20250305",
+            "name": "web_search",
+            "max_uses": cfg.web_search_max_uses,
+        })
+        logger.info("Web search enabled (max_uses=%d)", cfg.web_search_max_uses)
+    if cfg.url_fetch:
+        tools.append({
+            "name": "fetch_url",
+            "description": (
+                "Fetch and read the contents of a web page URL. Use this when "
+                "the user shares a URL or when you want to read a page found "
+                "via web search. Returns the page text content."
+            ),
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL to fetch",
+                    }
+                },
+                "required": ["url"],
+            },
+        })
+        logger.info("URL fetch tool enabled")
+    tools.append({
+        "name": "read_file",
+        "description": (
+            "Read the contents of a local file or list a directory. Use this "
+            "when the user asks about code, config, or any file. Takes an "
+            "absolute path or a path relative to the working directory."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "Absolute or relative file/directory path",
+                }
+            },
+            "required": ["path"],
+        },
+    })
+    logger.info("File read tool enabled")
+    return tools or None
+
+
 async def _chat_stream(
     user_id: int,
     session_id: str,
     system: str | None,
     messages: list[dict],
 ):
-    """Async generator that streams SSE events to the frontend."""
+    """Async generator that streams SSE events to the frontend.
+
+    Supports multi-turn tool use: when the model calls a client-side tool
+    (e.g. fetch_url), we execute it locally, send the result back, and let
+    the model continue. Capped at MAX_TOOL_LOOPS iterations.
+    """
+    MAX_TOOL_LOOPS = 5
+
     full_response: list[str] = []
-    input_tokens = 0
-    output_tokens = 0
+    total_input_tokens = 0
+    total_output_tokens = 0
 
-    async for delta in stream_message(messages=messages, system=system):
-        if delta.type == "text":
-            full_response.append(delta.text)
-            yield f"data: {json.dumps({'type': 'token', 'text': delta.text})}\n\n"
+    tools = _build_tools()
 
-        elif delta.type == "error":
-            yield f"data: {json.dumps({'type': 'error', 'detail': delta.text})}\n\n"
-            return
+    for loop_iter in range(MAX_TOOL_LOOPS):
+        # Track content blocks for this API call
+        assistant_content_blocks: list[dict] = []
+        current_text_parts: list[str] = []
+        pending_tool_uses: list[dict] = []
+        input_tokens = 0
+        output_tokens = 0
+        stop_reason = ""
 
-        elif delta.type == "done":
-            input_tokens = delta.input_tokens
-            output_tokens = delta.output_tokens
+        async for delta in stream_message(messages=messages, system=system, tools=tools):
+            if delta.type == "text":
+                current_text_parts.append(delta.text)
+                full_response.append(delta.text)
+                yield f"data: {json.dumps({'type': 'token', 'text': delta.text})}\n\n"
 
-    # Save the complete assistant response
+            elif delta.type == "web_search":
+                yield f"data: {json.dumps({'type': 'web_search'})}\n\n"
+
+            elif delta.type == "tool_use":
+                # Flush any accumulated text into a content block
+                if current_text_parts:
+                    assistant_content_blocks.append({
+                        "type": "text",
+                        "text": "".join(current_text_parts),
+                    })
+                    current_text_parts = []
+                # Record the tool_use block
+                tool_block = {
+                    "type": "tool_use",
+                    "id": delta.tool_use_id,
+                    "name": delta.tool_name,
+                    "input": delta.tool_input or {},
+                }
+                assistant_content_blocks.append(tool_block)
+                pending_tool_uses.append(tool_block)
+
+            elif delta.type == "error":
+                yield f"data: {json.dumps({'type': 'error', 'detail': delta.text})}\n\n"
+                return
+
+            elif delta.type == "done":
+                input_tokens = delta.input_tokens
+                output_tokens = delta.output_tokens
+                stop_reason = delta.stop_reason
+
+        total_input_tokens += input_tokens
+        total_output_tokens += output_tokens
+
+        # Flush remaining text
+        if current_text_parts:
+            assistant_content_blocks.append({
+                "type": "text",
+                "text": "".join(current_text_parts),
+            })
+            current_text_parts = []
+
+        # If no tool calls, we're done streaming
+        if not pending_tool_uses:
+            break
+
+        # --- Execute tool calls and loop ---
+        # Append the assistant's full response (text + tool_use blocks) to messages
+        messages.append({"role": "assistant", "content": assistant_content_blocks})
+
+        # Execute each tool and build tool_result blocks
+        tool_results = []
+        for tool in pending_tool_uses:
+            if tool["name"] == "fetch_url":
+                url = tool["input"].get("url", "")
+                logger.info("Fetching URL: %s", url)
+                yield f"data: {json.dumps({'type': 'fetching_url', 'url': url})}\n\n"
+                result_text = await fetch_url(url)
+            elif tool["name"] == "read_file":
+                file_path = tool["input"].get("path", "")
+                logger.info("Reading file: %s", file_path)
+                yield f"data: {json.dumps({'type': 'reading_file', 'path': file_path})}\n\n"
+                result_text = read_file(file_path)
+            else:
+                result_text = f"Unknown tool: {tool['name']}"
+                logger.warning("Unknown tool called: %s", tool["name"])
+
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tool["id"],
+                "content": result_text,
+            })
+
+        # Append tool results as a user message
+        messages.append({"role": "user", "content": tool_results})
+        logger.info("Tool loop iteration %d — %d tool(s) executed, continuing", loop_iter + 1, len(tool_results))
+    else:
+        # Hit max loop iterations
+        logger.warning("Tool loop hit max iterations (%d) for session %s", MAX_TOOL_LOOPS, session_id)
+
+    # Save the complete assistant response (all text across all loop iterations)
     complete_text = "".join(full_response)
     if complete_text:
         msg_id = save_message(
             user_id, "assistant", complete_text, session_id,
-            token_estimate=output_tokens,
+            token_estimate=total_output_tokens,
         )
     else:
         msg_id = 0
 
     # --- Session token tracking & handover check ---
     prev_in, prev_out = _session_tokens.get(session_id, (0, 0))
-    cum_in = prev_in + input_tokens
-    cum_out = prev_out + output_tokens
+    cum_in = prev_in + total_input_tokens
+    cum_out = prev_out + total_output_tokens
     _session_tokens[session_id] = (cum_in, cum_out)
 
     handover = check_threshold(cum_in, cum_out)
@@ -179,7 +332,7 @@ async def _chat_stream(
         _session_tokens.pop(session_id, None)
         # Next message will auto-create a fresh session via _get_or_create_session
 
-    yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'session_id': session_id, 'input_tokens': input_tokens, 'output_tokens': output_tokens, 'handover': handover})}\n\n"
+    yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'session_id': session_id, 'input_tokens': total_input_tokens, 'output_tokens': total_output_tokens, 'handover': handover})}\n\n"
 
 
 async def _error_stream(detail: str):

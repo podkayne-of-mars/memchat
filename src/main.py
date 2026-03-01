@@ -1,6 +1,8 @@
-"""FastAPI application entry point for Immortal Chat."""
+"""FastAPI application entry point for memchat."""
 
+import secrets
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -9,22 +11,35 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from src.config import get_config
 from src.database import init_db
+from src.vector_store import init_vector_store
 from src.routes import chat, debug, users, settings
+
+SECRET_FILE = Path("data/.session_secret")
+
+
+def _get_session_secret() -> str:
+    """Load session secret from file, or generate and persist a new one."""
+    if SECRET_FILE.exists():
+        return SECRET_FILE.read_text().strip()
+    SECRET_FILE.parent.mkdir(parents=True, exist_ok=True)
+    secret = secrets.token_hex(32)
+    SECRET_FILE.write_text(secret)
+    return secret
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown logic."""
     init_db()
+    init_vector_store()
     yield
 
 
-app = FastAPI(title="Immortal Chat", lifespan=lifespan)
+app = FastAPI(title="memchat", lifespan=lifespan)
 
-# Signed cookie sessions — no passwords, just user switching
 app.add_middleware(
     SessionMiddleware,
-    secret_key="immortalchat-local-session-key-not-for-production",
+    secret_key=_get_session_secret(),
     max_age=365 * 24 * 3600,
 )
 

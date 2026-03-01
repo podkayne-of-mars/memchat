@@ -11,10 +11,8 @@ from src.database import create_user, get_user, get_user_by_username, list_users
 from src.models import UserCreate
 
 DEFAULT_PERSONA = (
-    "You are a helpful assistant in an ongoing conversation. "
     "Be practical, direct, and focused on being useful. "
-    "Remember previous discussions, decisions made, and ideas explored "
-    "— including ones that were rejected and why."
+    "Match the user's tone — casual if they're casual, detailed if they want depth."
 )
 
 router = APIRouter(tags=["users"])

@@ -1,4 +1,4 @@
-"""Configuration loading for Immortal Chat."""
+"""Configuration loading for memchat."""
 
 import os
 from dataclasses import dataclass, field
@@ -20,12 +20,16 @@ class AnthropicConfig:
     curator_model: str = "claude-haiku-4-5-20251001"
     max_context_tokens: int = 200_000
     handover_threshold: float = 0.70
+    web_search: bool = False
+    web_search_max_uses: int = 5
+    url_fetch: bool = True
 
 
 @dataclass
 class ConversationConfig:
     buffer_messages: int = 20
     max_knowledge_entries: int = 30
+    similarity_threshold: float = 0.3
 
 
 @dataclass
@@ -36,7 +40,7 @@ class CuratorConfig:
 
 @dataclass
 class DatabaseConfig:
-    path: str = "./data/immortalchat.db"
+    path: str = "./data/memchat.db"
 
 
 @dataclass

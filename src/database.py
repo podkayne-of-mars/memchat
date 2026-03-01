@@ -1,4 +1,4 @@
-"""SQLite database setup and query functions for Immortal Chat."""
+"""SQLite database setup and query functions for memchat."""
 
 import sqlite3
 from pathlib import Path
@@ -321,6 +321,8 @@ def save_knowledge(
     supersedes_id: int | None = None,
 ) -> int:
     """Insert a knowledge entry. If it supersedes another, mark the old one."""
+    from src.vector_store import add_knowledge as vector_add
+
     with get_connection() as conn:
         if supersedes_id is not None:
             conn.execute(
@@ -333,7 +335,10 @@ def save_knowledge(
                VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (user_id, entry_type, topic, content, confidence, source_session_id, supersedes_id),
         )
-        return cursor.lastrowid
+        entry_id = cursor.lastrowid
+
+    vector_add(entry_id, user_id, topic, content)
+    return entry_id
 
 
 def search_knowledge(user_id: int, query: str, limit: int = 30) -> list[dict]:
@@ -348,6 +353,20 @@ def search_knowledge(user_id: int, query: str, limit: int = 30) -> list[dict]:
             (query, user_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+def get_knowledge_by_ids(ids: list[int]) -> list[dict]:
+    """Fetch specific knowledge entries by ID list, preserving the input order."""
+    if not ids:
+        return []
+    with get_connection() as conn:
+        placeholders = ",".join("?" for _ in ids)
+        rows = conn.execute(
+            f"SELECT * FROM knowledge WHERE id IN ({placeholders})",
+            ids,
+        ).fetchall()
+    by_id = {r["id"]: dict(r) for r in rows}
+    return [by_id[i] for i in ids if i in by_id]
 
 
 def get_all_active_knowledge(user_id: int) -> list[dict]:

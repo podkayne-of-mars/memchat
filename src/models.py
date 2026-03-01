@@ -1,4 +1,4 @@
-"""Pydantic models for Immortal Chat API and internal data."""
+"""Pydantic models for memchat API and internal data."""
 
 from datetime import datetime
 from enum import Enum

@@ -4,10 +4,13 @@ server:
 
 anthropic:
   # API key loaded from ANTHROPIC_API_KEY env var — never stored here
-  conversation_model: "claude-sonnet-4-20250514"
-  curator_model: "claude-haiku-4-5-20251001"
+  conversation_model: "claude-opus-4-5-20251101"
+  curator_model: "claude-opus-4-5-20251101"
   max_context_tokens: 200000
   handover_threshold: 0.70
+  web_search: false             # enable Claude's built-in web search tool
+  web_search_max_uses: 5        # max searches per turn (each costs extra input tokens)
+  url_fetch: true               # enable URL fetching tool
 
 conversation:
   buffer_messages: 20
@@ -18,4 +21,4 @@ curator:
   local_model: "mistral"
 
 database:
-  path: "./data/immortalchat.db"
+  path: "./data/memchat.db"

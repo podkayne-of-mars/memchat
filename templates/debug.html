@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Debug — Immortal Chat{% endblock %}
+{% block title %}Debug — Memchat{% endblock %}
 
 {% block content %}
 <div id="top-bar">
@@ -40,6 +40,9 @@
 
     <h2>Knowledge Entries ({{ knowledge|length }})</h2>
     {% if knowledge %}
+    <div style="margin-bottom: 0.75rem;">
+        <button id="clear-all-btn" onclick="clearAllKnowledge()" style="background: #5c1e1e; border: none; color: #f5a0a0; padding: 0.4rem 1rem; border-radius: 4px; cursor: pointer; font-size: 0.85em;">Clear All Active Knowledge</button>
+    </div>
     <table border="1" cellpadding="4" cellspacing="0">
         <tr>
             <th>ID</th>
@@ -49,16 +52,22 @@
             <th>Confidence</th>
             <th>Status</th>
             <th>Created</th>
+            <th></th>
         </tr>
         {% for k in knowledge %}
-        <tr>
+        <tr id="knowledge-row-{{ k.id }}">
             <td>{{ k.id }}</td>
             <td>{{ k.type }}</td>
             <td>{{ k.topic }}</td>
             <td>{{ k.content }}</td>
             <td>{{ k.confidence }}</td>
-            <td>{{ k.status }}</td>
+            <td id="knowledge-status-{{ k.id }}">{{ k.status }}</td>
             <td>{{ k.created_at }}</td>
+            <td>
+                {% if k.status == 'active' %}
+                <button onclick="retireKnowledge({{ k.id }})" style="background: #3d1212; border: 1px solid #5c1e1e; color: #f5a0a0; padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.8em;">Retire</button>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </table>
@@ -90,4 +99,32 @@
     <p>No sessions yet.</p>
     {% endif %}
 </div>
+<script>
+async function retireKnowledge(id) {
+    const res = await fetch(`/api/debug/knowledge/${id}/delete`, { method: "POST" });
+    if (res.ok) {
+        const statusCell = document.getElementById(`knowledge-status-${id}`);
+        statusCell.textContent = "retired";
+        // Remove the retire button
+        const row = document.getElementById(`knowledge-row-${id}`);
+        const btn = row.querySelector("button");
+        if (btn) btn.remove();
+    }
+}
+
+async function clearAllKnowledge() {
+    if (!confirm("Retire ALL active knowledge entries? This cannot be undone.")) return;
+    const res = await fetch("/api/debug/knowledge/clear", { method: "POST" });
+    if (res.ok) {
+        const data = await res.json();
+        // Update all active status cells to retired and remove buttons
+        document.querySelectorAll("td[id^='knowledge-status-']").forEach(cell => {
+            if (cell.textContent === "active") cell.textContent = "retired";
+        });
+        document.querySelectorAll("tr[id^='knowledge-row-'] button").forEach(btn => btn.remove());
+        document.getElementById("clear-all-btn").disabled = true;
+        document.getElementById("clear-all-btn").textContent = `Cleared (${data.retired} entries)`;
+    }
+}
+</script>
 {% endblock %}
