@@ -103,11 +103,19 @@ async def send_message(req: ChatRequest, request: Request):
     session_id = _get_or_create_session(user_id)
 
     # Save the user's message
-    save_message(user_id, "user", req.message, session_id)
+    save_message(
+        user_id, "user", req.message, session_id,
+        image_data=req.image_data,
+        image_media_type=req.image_media_type,
+    )
 
     # Build context via assembler
     try:
-        system, messages = build_context(user_id, req.message)
+        system, messages = build_context(
+            user_id, req.message,
+            image_data=req.image_data,
+            image_media_type=req.image_media_type,
+        )
     except Exception as exc:
         logger.exception("build_context failed")
         return StreamingResponse(

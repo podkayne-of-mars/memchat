@@ -28,7 +28,12 @@ from src.system_prompt import SYSTEM_PROMPT
 logger = logging.getLogger(__name__)
 
 
-def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict]]:
+def build_context(
+    user_id: int,
+    new_message: str,
+    image_data: str | None = None,
+    image_media_type: str | None = None,
+) -> tuple[str | None, list[dict]]:
     """Assemble the full context for an API call.
 
     Returns (system_prompt, messages_list) ready to pass to the Anthropic client.
@@ -139,7 +144,21 @@ def build_context(user_id: int, new_message: str) -> tuple[str | None, list[dict
     messages.reverse()
 
     # --- 6. New user message — always last ---
-    messages.append({"role": "user", "content": new_message})
+    if image_data and image_media_type:
+        new_content = [
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": image_media_type,
+                    "data": image_data,
+                },
+            },
+            {"type": "text", "text": new_message},
+        ]
+        messages.append({"role": "user", "content": new_content})
+    else:
+        messages.append({"role": "user", "content": new_message})
 
     total_tokens = used + buffer_tokens
     logger.info(

@@ -97,6 +97,10 @@ Claude can fetch and read web pages directly when you share a URL. Useful for di
 
 Claude can read files from your local machine when you provide a path. Useful for reviewing code, configs, logs, or documents without pasting content into chat.
 
+### Image Support
+
+Paste, drag-and-drop, or upload images directly in chat. Claude sees the image and can describe, analyse, or answer questions about it. Supports JPEG, PNG, GIF, and WebP up to 10 MB. Images are stored in the database and displayed in conversation history on reload. One image per message; text is always required alongside the image.
+
 ### Multi-User
 
 Multiple users share a single instance with complete data separation. Each user has their own persona, conversation history, knowledge store, and checkpoint. Simple password authentication — designed for household use on a local network, not enterprise security.

@@ -3,7 +3,7 @@
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # --- Enums ---
@@ -106,8 +106,26 @@ class UserCreate(BaseModel):
     display_name: str = Field(min_length=1, max_length=100)
 
 
+_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+_MAX_IMAGE_BYTES = 10 * 1024 * 1024  # ~10 MB base64
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1)
+    image_data: str | None = None
+    image_media_type: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_image(self):
+        if self.image_data and not self.image_media_type:
+            raise ValueError("image_media_type is required when image_data is provided")
+        if self.image_media_type and self.image_media_type not in _ALLOWED_IMAGE_TYPES:
+            raise ValueError(
+                f"image_media_type must be one of {sorted(_ALLOWED_IMAGE_TYPES)}"
+            )
+        if self.image_data and len(self.image_data) > _MAX_IMAGE_BYTES:
+            raise ValueError("image_data exceeds 10 MB limit")
+        return self
 
 
 class ChatResponse(BaseModel):

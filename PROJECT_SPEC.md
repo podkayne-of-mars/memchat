@@ -63,6 +63,7 @@ A local desktop chat application that presents a continuous, unbroken conversati
 - Simple HTML/JS/CSS served by FastAPI
 - Scrolling conversation display showing full history from local DB
 - Markdown rendering for Claude responses
+- Image support: paste, drag-and-drop, or file upload (JPEG/PNG/GIF/WebP, max 10 MB). Preview strip above input, rendered inline in message bubbles. Stored in DB and restored on history load.
 - User login/switcher (simple — home network security only)
 - No framework bloat. HTMX or vanilla JS. Server-rendered where possible.
 
@@ -152,6 +153,9 @@ Claude can fetch and read web pages directly when you share a URL. Useful for di
 #### 9. Local File Reading
 Claude can read files from your local machine when you provide a path. Useful for reviewing code, configs, logs, or documents without pasting content into chat.
 
+#### 10. Image Input
+Users can attach one image per message via paste, drag-and-drop, or file upload. The image is sent to the Anthropic API as a base64 content block alongside the text. Supported types: JPEG, PNG, GIF, WebP (max 10 MB). Images are stored in the messages table (`image_data`, `image_media_type` columns) and rendered inline in conversation history. Only the new message includes the image — buffer messages exclude images to conserve token budget.
+
 ---
 
 ### Data Model
@@ -182,6 +186,8 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     session_id TEXT NOT NULL,  -- groups messages within an API session
     token_estimate INTEGER,
+    image_data TEXT,           -- base64-encoded image (user messages only)
+    image_media_type TEXT,     -- e.g. "image/png", "image/jpeg"
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -365,7 +371,7 @@ memchat/
 - Cloud deployment
 - End-to-end encryption (it's your local network)
 - Voice input/output
-- Image generation or multimodal
+- Image generation (image input/vision is supported; generation is not)
 - Plugin system
 
 ---

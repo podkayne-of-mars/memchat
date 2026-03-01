@@ -13,7 +13,13 @@
 </div>
 <div id="chat-container">
     <div id="messages"></div>
+    <div id="image-preview" style="display:none;">
+        <img id="preview-img" src="" alt="Preview" />
+        <button type="button" id="remove-image" title="Remove image">&times;</button>
+    </div>
     <form id="chat-form">
+        <input type="file" id="image-file-input" accept="image/*" style="display:none;" />
+        <button type="button" id="attach-btn" title="Attach image">&#128247;</button>
         <input type="text" id="message-input" placeholder="Type a message..." autocomplete="off" />
         <button type="submit">Send</button>
     </form>

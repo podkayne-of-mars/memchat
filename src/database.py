@@ -156,6 +156,12 @@ def init_db() -> None:
         if "password_hash" not in cols:
             conn.execute("ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''")
 
+        # Migration: add image columns to messages table
+        msg_cols = [r[1] for r in conn.execute("PRAGMA table_info(messages)").fetchall()]
+        if "image_data" not in msg_cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN image_data TEXT")
+            conn.execute("ALTER TABLE messages ADD COLUMN image_media_type TEXT")
+
 
 # ---------------------------------------------------------------------------
 # Query helpers — thin wrappers, one per operation
@@ -200,13 +206,17 @@ def save_message(
     content: str,
     session_id: str,
     token_estimate: int | None = None,
+    image_data: str | None = None,
+    image_media_type: str | None = None,
 ) -> int:
     """Persist a message, return its id."""
     with get_connection() as conn:
         cursor = conn.execute(
-            """INSERT INTO messages (user_id, role, content, session_id, token_estimate)
-               VALUES (?, ?, ?, ?, ?)""",
-            (user_id, role, content, session_id, token_estimate),
+            """INSERT INTO messages (user_id, role, content, session_id, token_estimate,
+               image_data, image_media_type)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, role, content, session_id, token_estimate,
+             image_data, image_media_type),
         )
         return cursor.lastrowid
 

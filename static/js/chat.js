@@ -1,14 +1,105 @@
-// Chat frontend — SSE streaming support
+// Chat frontend — SSE streaming support + image handling
 document.addEventListener("DOMContentLoaded", () => {
     const form = document.getElementById("chat-form");
     const input = document.getElementById("message-input");
     const messagesDiv = document.getElementById("messages");
-    const sendBtn = form.querySelector("button");
+    const sendBtn = form.querySelector("button[type=submit]");
+    const attachBtn = document.getElementById("attach-btn");
+    const fileInput = document.getElementById("image-file-input");
+    const imagePreview = document.getElementById("image-preview");
+    const previewImg = document.getElementById("preview-img");
+    const removeImageBtn = document.getElementById("remove-image");
 
     let sending = false;
 
+    // Pending image state
+    let pendingImageData = null;   // raw base64 (no data: prefix)
+    let pendingImageType = null;   // e.g. "image/png"
+
+    const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
+    const MAX_SIZE = 10 * 1024 * 1024; // 10 MB
+
     // Load existing messages on page load
     loadHistory();
+
+    // --- Image helpers ---
+
+    function readImageFile(file) {
+        if (!ALLOWED_TYPES.has(file.type)) {
+            alert("Unsupported image type. Use JPEG, PNG, GIF, or WebP.");
+            return;
+        }
+        if (file.size > MAX_SIZE) {
+            alert("Image too large (max 10 MB).");
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const dataUrl = reader.result;          // "data:<type>;base64,<data>"
+            const base64 = dataUrl.split(",")[1];
+            pendingImageData = base64;
+            pendingImageType = file.type;
+            showPreview(dataUrl);
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function showPreview(dataUrl) {
+        previewImg.src = dataUrl;
+        imagePreview.style.display = "flex";
+    }
+
+    function clearPreview() {
+        pendingImageData = null;
+        pendingImageType = null;
+        previewImg.src = "";
+        imagePreview.style.display = "none";
+        fileInput.value = "";
+    }
+
+    // --- Image input handlers ---
+
+    // Attach button → trigger file picker
+    attachBtn.addEventListener("click", () => fileInput.click());
+
+    // File picker change
+    fileInput.addEventListener("change", () => {
+        if (fileInput.files.length > 0) {
+            readImageFile(fileInput.files[0]);
+        }
+    });
+
+    // Remove button on preview
+    removeImageBtn.addEventListener("click", clearPreview);
+
+    // Paste handler — intercept image paste anywhere on the page
+    document.addEventListener("paste", (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith("image/")) {
+                e.preventDefault();
+                readImageFile(item.getAsFile());
+                return;
+            }
+        }
+    });
+
+    // Drag-and-drop on chat container
+    const chatContainer = document.getElementById("chat-container");
+    chatContainer.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+    });
+    chatContainer.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const files = e.dataTransfer.files;
+        if (files.length > 0 && files[0].type.startsWith("image/")) {
+            readImageFile(files[0]);
+        }
+    });
+
+    // --- Rendering helpers ---
 
     function renderMarkdownLinks(text) {
         // Convert [text](url) to clickable <a> tags, escaping everything else
@@ -38,9 +129,15 @@ document.addEventListener("DOMContentLoaded", () => {
         return parts;
     }
 
-    function addMessage(role, content) {
+    function addMessage(role, content, imageDataUrl) {
         const div = document.createElement("div");
         div.className = `message ${role}`;
+        if (imageDataUrl) {
+            const img = document.createElement("img");
+            img.className = "message-image";
+            img.src = imageDataUrl;
+            div.appendChild(img);
+        }
         for (const node of renderMarkdownLinks(content)) {
             div.appendChild(node);
         }
@@ -77,7 +174,11 @@ document.addEventListener("DOMContentLoaded", () => {
             const messages = await res.json();
             for (const msg of messages) {
                 if (msg.role === "user" || msg.role === "assistant") {
-                    addMessage(msg.role, msg.content);
+                    let imageDataUrl = null;
+                    if (msg.image_data && msg.image_media_type) {
+                        imageDataUrl = `data:${msg.image_media_type};base64,${msg.image_data}`;
+                    }
+                    addMessage(msg.role, msg.content, imageDataUrl);
                 }
             }
         } catch (err) {
@@ -92,17 +193,32 @@ document.addEventListener("DOMContentLoaded", () => {
         const text = input.value.trim();
         if (!text) return;
 
-        addMessage("user", text);
+        // Capture pending image before clearing
+        const imgData = pendingImageData;
+        const imgType = pendingImageType;
+        let userImageDataUrl = null;
+        if (imgData && imgType) {
+            userImageDataUrl = `data:${imgType};base64,${imgData}`;
+        }
+
+        addMessage("user", text, userImageDataUrl);
         input.value = "";
+        clearPreview();
         setEnabled(false);
 
         const bubble = createAssistantBubble();
 
         try {
+            const payload = { message: text };
+            if (imgData && imgType) {
+                payload.image_data = imgData;
+                payload.image_media_type = imgType;
+            }
+
             const res = await fetch("/api/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: text }),
+                body: JSON.stringify(payload),
             });
 
             if (res.status === 401) {
