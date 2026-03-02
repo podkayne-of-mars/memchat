@@ -144,7 +144,6 @@ Key settings in `config.yaml`:
 - **Knowledge retrieval** uses ChromaDB vector search (sentence-transformers all-MiniLM-L6-v2) for semantic matching. Scales well, but retrieval quality with very large knowledge stores (thousands of entries) is untested.
 - **Curator quality** is critical. We recommend Opus — Haiku tends to flatten nuance and lose subtle reasoning. The debug page lets you inspect and retire bad entries.
 - **Checkpoint drift** is theoretically possible over many months of rewrites. Not yet observed in practice.
-- **No mobile app.** Use the browser on your phone — it works fine.
 - **Passwords are basic.** SHA-256, no salt. This is "don't accidentally open each other's chat" security, not "defend against attackers" security. Don't reuse a real password.
 
 ## API Costs
