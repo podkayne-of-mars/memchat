@@ -297,15 +297,20 @@ document.addEventListener("DOMContentLoaded", () => {
                         for (const node of renderMarkdownLinks(raw)) {
                             bubble.appendChild(node);
                         }
+                        // Re-enable input immediately — don't wait for
+                        // stream close (curator may still be running)
+                        setEnabled(true);
+                        input.focus();
                     }
                 }
             }
         } catch (err) {
             bubble.textContent = "Connection error: " + err.message;
             bubble.className = "message error";
+        } finally {
+            // Safety net — always re-enable even if something unexpected happened
+            setEnabled(true);
+            input.focus();
         }
-
-        setEnabled(true);
-        input.focus();
     });
 });
