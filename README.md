@@ -14,7 +14,7 @@ Memchat was vibe-coded. The architecture, design decisions, and direction are hu
 
 Memchat is a local web-based chat application designed to create the illusion of a continuous, never-ending conversation with Claude. There is no "new chat" button. The conversation should never clear, never degrade, and never forget.
 
-Behind the scenes, the system manages Claude's context window invisibly. When the context fills up, a separate AI call silently extracts important information — facts, preferences, decisions, corrections, rejected approaches, events, and project details — into a local database. Each entry is tagged with type, category, salience, and date. The next message starts a fresh API session, rebuilt from stored knowledge, a conversation checkpoint, and recent message history. Ideally, the user doesn't notice the transition.
+Behind the scenes, the system manages Claude's context window invisibly. When the context fills up, a separate AI call silently extracts important information — facts, preferences, decisions, corrections, rejected approaches, events, project details, and session actions — into a local database. Each entry is tagged with type, category, date, and two retention dimensions: continuity (needed for current work) and durable (matters long-term). The next message starts a fresh API session, rebuilt from stored knowledge, a conversation checkpoint, and recent message history. Ideally, the user doesn't notice the transition.
 
 Over time, the AI should accumulate genuine understanding of you: your preferences, your projects, your decisions, and — critically — the things you tried that didn't work. The goal is that it gets more useful the longer you use it.
 
@@ -68,8 +68,9 @@ Over time, the AI should accumulate genuine understanding of you: your preferenc
 | Rejected | Ideas tried and abandoned, with reasons | "Considered Redis, rejected as overkill" |
 | Event | Life events and milestones | "Got a new job at Acme Corp" |
 | Project | Ongoing project details | "Memchat uses ChromaDB for vector search" |
+| Action | Session changes — file edits, implementations | "Added continuity/durable columns to knowledge table" |
 
-Each entry is tagged with type, category, date, and salience (HIGH or LOW). HIGH salience entries are things the user would be frustrated if the AI forgot — preferences, decisions, corrections, rejected approaches. Nothing is ever deleted — superseded entries are marked as such, preserving a full audit trail. Rejected approaches are explicitly preserved because they're the most expensive knowledge to lose.
+Each entry is tagged with type, category, date, and two retention dimensions: **continuity** (HIGH/LOW — needed to resume current work, decays when resolved) and **durable** (HIGH/LOW — matters about the user long-term, doesn't decay). Nothing is ever deleted — superseded entries are marked as such, preserving a full audit trail. Rejected approaches are explicitly preserved because they're the most expensive knowledge to lose.
 
 The Curator also writes a narrative checkpoint — a 2-4 sentence summary of the current conversation state.
 
@@ -82,12 +83,13 @@ The knowledge store is not a flat log. It's structured:
 - **Active** entries are retrieved and injected into context
 - **Superseded** entries are preserved but not retrieved — they link to what replaced them
 - **Retired** entries are hidden but never deleted
-- **Salience** (HIGH/LOW) determines how aggressively the AI surfaces knowledge — HIGH items trigger a "What I already know" summary before responding
+- **Continuity** (HIGH/LOW) flags entries needed to resume current work — decays when the task is resolved
+- **Durable** (HIGH/LOW) flags entries that matter about the user long-term — doesn't decay
 - **Rejected** entries include rejection reasons, preventing the AI from re-suggesting dead ends
 
 ### Memory Surfacing
 
-The AI doesn't just passively hold knowledge — it actively surfaces it. When HIGH salience entries are relevant to the user's message, the AI begins its response with a brief "What I already know" section. This proves it remembers, gives the user a chance to correct stale info, and prevents the AI from ignoring its own stored knowledge. Before web searches, surfacing is mandatory — the AI must show what it already knows before reaching for the web.
+The AI doesn't just passively hold knowledge — it actively surfaces it. When entries with HIGH continuity or HIGH durable are relevant to the user's message, the AI begins its response with a brief "What I already know" section. This proves it remembers, gives the user a chance to correct stale info, and prevents the AI from ignoring its own stored knowledge. Before web searches, surfacing is mandatory — the AI must show what it already knows before reaching for the web.
 
 ### Web Search
 

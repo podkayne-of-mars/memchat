@@ -35,7 +35,7 @@ def _migrate_existing_entries() -> None:
     """Bulk-add all active knowledge entries from SQLite into ChromaDB."""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, user_id, topic, content, salience FROM knowledge WHERE status = 'active'"
+            "SELECT id, user_id, topic, content, continuity, durable FROM knowledge WHERE status = 'active'"
         ).fetchall()
 
     if not rows:
@@ -45,7 +45,12 @@ def _migrate_existing_entries() -> None:
     ids = [str(r["id"]) for r in rows]
     documents = [f"{r['topic']}: {r['content']}" for r in rows]
     metadatas = [
-        {"user_id": r["user_id"], "status": "active", "salience": r["salience"] or "low"}
+        {
+            "user_id": r["user_id"],
+            "status": "active",
+            "continuity": r["continuity"] or "low",
+            "durable": r["durable"] or "low",
+        }
         for r in rows
     ]
 
@@ -53,14 +58,14 @@ def _migrate_existing_entries() -> None:
     logger.info("Vector store migration: embedded %d entries.", len(ids))
 
 
-def add_knowledge(entry_id: int, user_id: int, topic: str, content: str, salience: str = "low") -> None:
+def add_knowledge(entry_id: int, user_id: int, topic: str, content: str, continuity: str = "low", durable: str = "low") -> None:
     """Upsert a single knowledge entry into the vector store."""
     if _collection is None:
         return
     _collection.upsert(
         ids=[str(entry_id)],
         documents=[f"{topic}: {content}"],
-        metadatas=[{"user_id": user_id, "status": "active", "salience": salience}],
+        metadatas=[{"user_id": user_id, "status": "active", "continuity": continuity, "durable": durable}],
     )
 
 

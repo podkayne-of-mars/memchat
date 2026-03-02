@@ -114,19 +114,21 @@ A separate API call using Opus for high-quality extraction.
 - Rejected approaches (with reasons why they failed)
 - Events and milestones
 - Project details and architecture
+- Actions — file edits, implementations, configuration changes made during the session
 - Updated checkpoint summarising current state
 
-Each entry is assigned a **salience** level:
-- **HIGH**: The user would be frustrated or confused if the AI forgot this. Preferences, decisions, corrections, rejected approaches, important personal facts.
-- **LOW**: Useful background context but not critical.
+Each entry is assigned two **retention dimensions**:
+- **continuity** (HIGH/LOW): Is this needed to resume current work? HIGH for implementation details, file changes, active bugs, where we left off. Decays once the project/task is resolved.
+- **durable** (HIGH/LOW): Does this matter about the user long-term? HIGH for life events, personal facts, preferences, corrections. Doesn't decay.
 
 **Output format:** Structured JSON entries, each with:
 ```json
 {
-  "type": "fact|preference|decision|correction|rejected|event|project",
+  "type": "fact|preference|decision|correction|rejected|event|project|action",
   "category": "short consistent label",
   "content": "the actual knowledge entry",
-  "salience": "high|low",
+  "continuity": "high|low",
+  "durable": "high|low",
   "event_date": "YYYY-MM-DD or null"
 }
 ```
@@ -142,7 +144,7 @@ Each entry is assigned a **salience** level:
 **Curator model:** Opus is the default and recommended model. The quality of extraction is the critical bottleneck for the entire memory system — this is not the place to economise.
 
 #### 6. Knowledge Store
-SQLite tables. Each entry tagged with user_id, type, category (topic), content, salience, event_date, timestamps, and supersedes references.
+SQLite tables. Each entry tagged with user_id, type, category (topic), content, continuity, durable, event_date, timestamps, and supersedes references.
 
 **Key design principle:** Nothing gets deleted. Superseded entries get marked as superseded with a reference to what replaced them. Failed approaches stay forever with their failure reasons. This is the "map of where the mines are buried."
 
@@ -199,10 +201,11 @@ CREATE TABLE messages (
 CREATE TABLE knowledge (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('fact', 'preference', 'decision', 'correction', 'rejected', 'event', 'project')),
+    type TEXT NOT NULL CHECK(type IN ('fact', 'preference', 'decision', 'correction', 'rejected', 'event', 'project', 'action')),
     topic TEXT NOT NULL,
     content TEXT NOT NULL,
-    salience TEXT DEFAULT 'low' CHECK(salience IN ('high', 'low')),
+    continuity TEXT DEFAULT 'low' CHECK(continuity IN ('high', 'low')),
+    durable TEXT DEFAULT 'low' CHECK(durable IN ('high', 'low')),
     event_date TEXT,
     status TEXT DEFAULT 'active' CHECK(status IN ('active', 'superseded', 'retired')),
     supersedes_id INTEGER REFERENCES knowledge(id),

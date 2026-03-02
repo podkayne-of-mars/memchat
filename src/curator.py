@@ -28,45 +28,35 @@ IMPORTANT: Return ONLY valid JSON. No preamble, no explanation, no markdown \
 fences. Your entire response must be a single JSON object.
 
 Analyse the conversation and extract knowledge entries. Each entry has a type, \
-category, content, salience, and optional event_date.
+category, content, and retention dimensions.
 
 ## Types
 
 - **fact**: Concrete factual claims about the user, their life, environment, \
-or world. "I use Python 3.12", "I live in Melbourne", "My dog's name is Rex". \
-NOT pleasantries or conversational filler.
-- **preference**: Strongly held views, tastes, or preferences. "I hate ORMs", \
-"I prefer tabs over spaces", "Heinlein is overrated after 1970". Must be a \
-genuine preference, not a passing remark.
-- **decision**: Choices made during the conversation that should stick. \
-"We decided to use SQLite instead of PostgreSQL", "Going with FastAPI not Flask". \
-Include the reasoning if given.
-- **correction**: Anything that updates or contradicts a previous understanding. \
-"Actually I switched from VS Code to Neovim", "The deadline moved to April".
-- **rejected**: Ideas, suggestions, or approaches that were proposed and \
-explicitly rejected, abandoned, or found not to work — AND the reason why. \
-This is critical. Future conversations must not re-suggest things that already \
-failed. "Tried Redis for caching but overkill for the data volume".
-- **event**: Something that happened — a life event, milestone, or occurrence. \
-"Got a new job at Acme Corp", "Moved to a new apartment". Set event_date to \
-when it happened (not when discussed), if known.
-- **project**: Information about an ongoing project, its status, goals, or \
-architecture. "Memchat uses ChromaDB for vector search", "The API is FastAPI \
-with SSE streaming".
+or world.
+- **preference**: Strongly held views, tastes, or preferences.
+- **decision**: Choices made during the conversation that should stick.
+- **correction**: Anything that updates or contradicts a previous understanding.
+- **rejected**: Ideas/approaches proposed and explicitly rejected — AND the reason.
+- **event**: Something that happened — life event, milestone, occurrence.
+- **project**: Information about an ongoing project — status, goals, architecture, \
+milestones reached, implementation details, what changed this session.
+- **action**: Changes made during this session — file edits, implementations, \
+configuration changes. Include what was changed and why.
 
-## Salience
+## Retention
 
-Salience determines how aggressively the AI surfaces this knowledge in future \
-conversations. Assign HIGH or LOW:
+Each entry has two retention dimensions:
 
-- **HIGH**: The user would be frustrated or confused if the AI forgot this. \
-Preferences, decisions, corrections, rejected approaches, and important personal \
-facts. Things the user explicitly stated or emphasised. Things that change how \
-the AI should behave.
-- **LOW**: Useful background context but not critical. General facts, project \
-details that are easy to re-state, events mentioned in passing.
+- **continuity**: HIGH or LOW — is this needed to resume current work? \
+HIGH for: implementation details, file changes, active bugs, where we left off, \
+architectural decisions for active projects. \
+Decays once the project/task is resolved.
 
-When in doubt, prefer HIGH — it's better to over-surface than to forget.
+- **durable**: HIGH or LOW — does this matter about the user long-term? \
+HIGH for: life events, personal facts, preferences, corrections, things they'd \
+expect you to remember in a year. \
+Doesn't decay.
 
 ## Category
 
@@ -76,18 +66,27 @@ Examples: "coding style", "memchat architecture", "career", "reading tastes".
 
 ## Event date
 
-For events: the date (YYYY-MM-DD) when the event happened, not when it was \
-discussed. For decisions: the date the decision was made, if clear. \
-Omit (null) if unknown or not applicable.
+YYYY-MM-DD when it happened (not when discussed). Null if unknown or \
+not applicable.
+
+## What to capture
+
+Be greedy. Extract more rather than less. Look for:
+- Milestones: features completed, bugs fixed, things that now work
+- Implementation details: what files changed, what was added, how it works
+- Status changes: "X is now done" vs "we discussed X"
+- Breadcrumbs: enough detail that a future session can pick up where this left off
+- Life events: anything personal, even if mentioned in passing
+- Preferences and corrections: especially if they'd be annoyed if you forgot
+
+Ask yourself: if this session ended abruptly, what would the next instance need \
+to know to continue? And separately: what would matter about this user in a year?
 
 ## Checkpoint
 
 ALSO produce a checkpoint: a brief narrative summary (2-4 sentences) of \
-where the conversation currently stands. This will be injected into the \
-system prompt of future conversations, so it should read naturally — \
-NOT a bullet list, but a flowing summary. Include what was being discussed, \
-any open questions, and what the user might want to continue with next. \
-Also list the active discussion topics as short labels.
+where the conversation currently stands. Focus on active work, open questions, \
+and next steps. Also list the active discussion topics as short labels.
 
 If there is nothing worth extracting (e.g. the conversation was just \
 greetings or small talk), return empty arrays — do NOT invent entries.
@@ -96,10 +95,11 @@ Return this exact JSON structure:
 {
   "knowledge": [
     {
-      "type": "fact|preference|decision|correction|rejected|event|project",
+      "type": "fact|preference|decision|correction|rejected|event|project|action",
       "category": "short consistent label",
       "content": "the actual knowledge entry — be specific and self-contained",
-      "salience": "high|low",
+      "continuity": "high|low",
+      "durable": "high|low",
       "event_date": "YYYY-MM-DD or null"
     }
   ],
@@ -187,21 +187,24 @@ async def curate_session(user_id: int, session_id: str) -> dict:
     knowledge_entries = data.get("knowledge", [])
     saved_count = 0
 
-    valid_types = ("fact", "preference", "decision", "correction", "rejected", "event", "project")
+    valid_types = ("fact", "preference", "decision", "correction", "rejected", "event", "project", "action")
 
     for entry in knowledge_entries:
         entry_type = entry.get("type", "fact")
         category = entry.get("category", "general")
         content = entry.get("content", "")
-        salience = entry.get("salience", "low")
+        continuity = entry.get("continuity", "low")
+        durable = entry.get("durable", "low")
         event_date = entry.get("event_date")
 
         # Validate
         if entry_type not in valid_types:
             logger.warning("Curator: skipping entry with invalid type '%s'", entry_type)
             continue
-        if salience not in ("high", "low"):
-            salience = "low"
+        if continuity not in ("high", "low"):
+            continuity = "low"
+        if durable not in ("high", "low"):
+            durable = "low"
         if not content.strip():
             continue
         # Normalise event_date: keep only non-empty strings
@@ -213,12 +216,13 @@ async def curate_session(user_id: int, session_id: str) -> dict:
             entry_type=entry_type,
             topic=category,
             content=content,
-            salience=salience,
+            continuity=continuity,
+            durable=durable,
             event_date=event_date,
             source_session_id=session_id,
         )
         saved_count += 1
-        logger.info("  Curator extracted [%s:%s] %s", entry_type, salience, content[:80])
+        logger.info("  Curator extracted [%s:C=%s:D=%s] %s", entry_type, continuity, durable, content[:80])
 
     # Write checkpoint
     checkpoint = data.get("checkpoint", {})

@@ -40,7 +40,8 @@ def retrieve_knowledge(user_id: int, query: str) -> list[dict]:
 def format_knowledge_block(entries: list[dict]) -> str:
     """Format knowledge entries into a tagged block for the system prompt.
 
-    Each entry is formatted as: - [TYPE:category:DATE:SALIENCE] content
+    Each entry is formatted as: - [TYPE:category:DATE:C:D] content
+    where C = continuity, D = durable.
     Returns empty string if no entries.
     """
     if not entries:
@@ -64,13 +65,14 @@ def _format_date(raw: str | None) -> str:
 
 
 def _format_tag(entry: dict) -> str:
-    """Build a structured tag: [TYPE:category:DATE:SALIENCE]."""
+    """Build a structured tag: [TYPE:category:DATE:C:D] (continuity:durable)."""
     entry_type = entry.get("type", "fact").upper()
     category = entry.get("topic", "")
-    salience = (entry.get("salience") or "low").upper()
+    continuity = (entry.get("continuity") or "low").upper()
+    durable = (entry.get("durable") or "low").upper()
     # Prefer event_date; fall back to created_at
     date_str = _format_date(entry.get("event_date") or entry.get("created_at"))
-    return f"[{entry_type}:{category}:{date_str}:{salience}]"
+    return f"[{entry_type}:{category}:{date_str}:{continuity}:{durable}]"
 
 
 def _sanitise_fts_query(query: str) -> str:
