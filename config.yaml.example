@@ -4,8 +4,8 @@ server:
 
 anthropic:
   # API key loaded from ANTHROPIC_API_KEY env var — never stored here
-  conversation_model: "claude-opus-4-5-20251101"
-  curator_model: "claude-opus-4-5-20251101"
+  conversation_model: "claude-opus-4-6-20250610"
+  curator_model: "claude-opus-4-6-20250610"
   max_context_tokens: 200000
   handover_threshold: 0.70
   web_search: false             # enable Claude's built-in web search tool

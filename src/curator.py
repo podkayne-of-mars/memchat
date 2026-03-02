@@ -1,7 +1,7 @@
 """Curator — extracts knowledge and checkpoints from conversation sessions.
 
 Called during handover: reads the session's messages, sends them to a fast/cheap
-model (Haiku by default) with a structured extraction prompt, parses the JSON
+model (Opus by default) with a structured extraction prompt, parses the JSON
 response, and writes knowledge entries + a new checkpoint to the database.
 """
 
@@ -27,37 +27,60 @@ for future conversations.
 IMPORTANT: Return ONLY valid JSON. No preamble, no explanation, no markdown \
 fences. Your entire response must be a single JSON object.
 
-Analyse the conversation and extract:
+Analyse the conversation and extract knowledge entries. Each entry has a type, \
+category, content, salience, and optional event_date.
 
-1. **Facts**: Concrete factual claims stated by the user about themselves, \
-their work, their environment, or the world. Examples: "I use Python 3.12", \
-"I live in Melbourne", "My dog's name is Rex". NOT pleasantries or \
-conversational filler.
+## Types
 
-2. **Opinions**: Strongly held views, preferences, or tastes expressed by \
-the user. Examples: "I hate ORMs", "I prefer tabs over spaces", \
-"Heinlein is overrated after 1970". Must be a genuine preference, not \
-a passing remark.
+- **fact**: Concrete factual claims about the user, their life, environment, \
+or world. "I use Python 3.12", "I live in Melbourne", "My dog's name is Rex". \
+NOT pleasantries or conversational filler.
+- **preference**: Strongly held views, tastes, or preferences. "I hate ORMs", \
+"I prefer tabs over spaces", "Heinlein is overrated after 1970". Must be a \
+genuine preference, not a passing remark.
+- **decision**: Choices made during the conversation that should stick. \
+"We decided to use SQLite instead of PostgreSQL", "Going with FastAPI not Flask". \
+Include the reasoning if given.
+- **correction**: Anything that updates or contradicts a previous understanding. \
+"Actually I switched from VS Code to Neovim", "The deadline moved to April".
+- **rejected**: Ideas, suggestions, or approaches that were proposed and \
+explicitly rejected, abandoned, or found not to work — AND the reason why. \
+This is critical. Future conversations must not re-suggest things that already \
+failed. "Tried Redis for caching but overkill for the data volume".
+- **event**: Something that happened — a life event, milestone, or occurrence. \
+"Got a new job at Acme Corp", "Moved to a new apartment". Set event_date to \
+when it happened (not when discussed), if known.
+- **project**: Information about an ongoing project, its status, goals, or \
+architecture. "Memchat uses ChromaDB for vector search", "The API is FastAPI \
+with SSE streaming".
 
-3. **Decisions**: Choices made during the conversation that should be \
-remembered. Examples: "We decided to use SQLite instead of PostgreSQL", \
-"Going with FastAPI not Flask". Include the reasoning if given.
+## Salience
 
-4. **Corrections**: Anything that updates or contradicts a previous \
-understanding. Examples: "Actually I switched from VS Code to Neovim", \
-"The deadline moved to April". If you can identify what this corrects, note it.
+Salience determines how aggressively the AI surfaces this knowledge in future \
+conversations. Assign HIGH or LOW:
 
-5. **Failed approaches**: Ideas, suggestions, or approaches that were \
-proposed and explicitly rejected, abandoned, or found not to work — \
-AND the reason why. This is critical. Future conversations must not \
-re-suggest things that already failed. Examples: "Tried using Redis for \
-caching but it was overkill for the data volume", "Rejected microservices \
-architecture because it's just a personal project".
+- **HIGH**: The user would be frustrated or confused if the AI forgot this. \
+Preferences, decisions, corrections, rejected approaches, and important personal \
+facts. Things the user explicitly stated or emphasised. Things that change how \
+the AI should behave.
+- **LOW**: Useful background context but not critical. General facts, project \
+details that are easy to re-state, events mentioned in passing.
 
-For each extracted entry, assess confidence:
-- **high**: Explicitly and clearly stated, no ambiguity
-- **medium**: Reasonably implied or partially stated
-- **low**: Inferred or uncertain, might be misinterpreting
+When in doubt, prefer HIGH — it's better to over-surface than to forget.
+
+## Category
+
+A short consistent label (2-4 words) grouping related entries. Use the same \
+category for entries about the same thread — don't vary the name. \
+Examples: "coding style", "memchat architecture", "career", "reading tastes".
+
+## Event date
+
+For events: the date (YYYY-MM-DD) when the event happened, not when it was \
+discussed. For decisions: the date the decision was made, if clear. \
+Omit (null) if unknown or not applicable.
+
+## Checkpoint
 
 ALSO produce a checkpoint: a brief narrative summary (2-4 sentences) of \
 where the conversation currently stands. This will be injected into the \
@@ -73,10 +96,11 @@ Return this exact JSON structure:
 {
   "knowledge": [
     {
-      "type": "fact|opinion|decision|correction|failed_approach",
-      "topic": "short topic label (2-5 words)",
+      "type": "fact|preference|decision|correction|rejected|event|project",
+      "category": "short consistent label",
       "content": "the actual knowledge entry — be specific and self-contained",
-      "confidence": "high|medium|low"
+      "salience": "high|low",
+      "event_date": "YYYY-MM-DD or null"
     }
   ],
   "checkpoint": {
@@ -163,31 +187,38 @@ async def curate_session(user_id: int, session_id: str) -> dict:
     knowledge_entries = data.get("knowledge", [])
     saved_count = 0
 
+    valid_types = ("fact", "preference", "decision", "correction", "rejected", "event", "project")
+
     for entry in knowledge_entries:
         entry_type = entry.get("type", "fact")
-        topic = entry.get("topic", "general")
+        category = entry.get("category", "general")
         content = entry.get("content", "")
-        confidence = entry.get("confidence", "medium")
+        salience = entry.get("salience", "low")
+        event_date = entry.get("event_date")
 
         # Validate
-        if entry_type not in ("fact", "opinion", "decision", "correction", "failed_approach"):
+        if entry_type not in valid_types:
             logger.warning("Curator: skipping entry with invalid type '%s'", entry_type)
             continue
-        if confidence not in ("high", "medium", "low"):
-            confidence = "medium"
+        if salience not in ("high", "low"):
+            salience = "low"
         if not content.strip():
             continue
+        # Normalise event_date: keep only non-empty strings
+        if not event_date or not isinstance(event_date, str):
+            event_date = None
 
         save_knowledge(
             user_id=user_id,
             entry_type=entry_type,
-            topic=topic,
+            topic=category,
             content=content,
-            confidence=confidence,
+            salience=salience,
+            event_date=event_date,
             source_session_id=session_id,
         )
         saved_count += 1
-        logger.info("  Curator extracted [%s] %s: %s", entry_type, topic, content[:80])
+        logger.info("  Curator extracted [%s:%s] %s", entry_type, salience, content[:80])
 
     # Write checkpoint
     checkpoint = data.get("checkpoint", {})

@@ -40,7 +40,7 @@ async def debug_page(request: Request):
     with get_connection() as conn:
         knowledge = [
             dict(r) for r in conn.execute(
-                """SELECT id, type, topic, content, confidence, status, created_at
+                """SELECT id, type, topic, content, salience, event_date, status, created_at
                    FROM knowledge WHERE user_id = ?
                    ORDER BY created_at DESC""",
                 (user_id,),

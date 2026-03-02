@@ -14,7 +14,7 @@ Memchat was vibe-coded. The architecture, design decisions, and direction are hu
 
 Memchat is a local web-based chat application designed to create the illusion of a continuous, never-ending conversation with Claude. There is no "new chat" button. The conversation should never clear, never degrade, and never forget.
 
-Behind the scenes, the system manages Claude's context window invisibly. When the context fills up, a separate AI call silently extracts important information — facts, opinions, decisions, corrections, and failed approaches — into a local database. The next message starts a fresh API session, rebuilt from stored knowledge, a conversation checkpoint, and recent message history. Ideally, the user doesn't notice the transition.
+Behind the scenes, the system manages Claude's context window invisibly. When the context fills up, a separate AI call silently extracts important information — facts, preferences, decisions, corrections, rejected approaches, events, and project details — into a local database. Each entry is tagged with type, category, salience, and date. The next message starts a fresh API session, rebuilt from stored knowledge, a conversation checkpoint, and recent message history. Ideally, the user doesn't notice the transition.
 
 Over time, the AI should accumulate genuine understanding of you: your preferences, your projects, your decisions, and — critically — the things you tried that didn't work. The goal is that it gets more useful the longer you use it.
 
@@ -62,12 +62,14 @@ Over time, the AI should accumulate genuine understanding of you: your preferenc
 | Type | What It Captures | Example |
 |------|-----------------|---------|
 | Fact | Stated truths | "Has visited Tokyo three times" |
-| Opinion | Preferences and judgments | "Prefers Heinlein over Asimov" |
+| Preference | Views, tastes, and preferences | "Prefers Heinlein over Asimov" |
 | Decision | Choices with reasoning | "Chose SQLite over Postgres for simplicity" |
 | Correction | Updated information | "Actually three visits, not two" |
-| Failed Approach | Rejected ideas with reasons | "Considered Redis, rejected as overkill" |
+| Rejected | Ideas tried and abandoned, with reasons | "Considered Redis, rejected as overkill" |
+| Event | Life events and milestones | "Got a new job at Acme Corp" |
+| Project | Ongoing project details | "Memchat uses ChromaDB for vector search" |
 
-Each entry is tagged with topic, confidence level, and date. Nothing is ever deleted — superseded entries are marked as such, preserving a full audit trail. Failed approaches are explicitly preserved because they're the most expensive knowledge to lose.
+Each entry is tagged with type, category, date, and salience (HIGH or LOW). HIGH salience entries are things the user would be frustrated if the AI forgot — preferences, decisions, corrections, rejected approaches. Nothing is ever deleted — superseded entries are marked as such, preserving a full audit trail. Rejected approaches are explicitly preserved because they're the most expensive knowledge to lose.
 
 The Curator also writes a narrative checkpoint — a 2-4 sentence summary of the current conversation state.
 
@@ -80,8 +82,12 @@ The knowledge store is not a flat log. It's structured:
 - **Active** entries are retrieved and injected into context
 - **Superseded** entries are preserved but not retrieved — they link to what replaced them
 - **Retired** entries are hidden but never deleted
-- **Confidence levels** (high/medium/low) help prioritise when context space is limited
-- **Failed approaches** include rejection reasons, preventing the AI from re-suggesting dead ends
+- **Salience** (HIGH/LOW) determines how aggressively the AI surfaces knowledge — HIGH items trigger a "What I already know" summary before responding
+- **Rejected** entries include rejection reasons, preventing the AI from re-suggesting dead ends
+
+### Memory Surfacing
+
+The AI doesn't just passively hold knowledge — it actively surfaces it. When HIGH salience entries are relevant to the user's message, the AI begins its response with a brief "What I already know" section. This proves it remembers, gives the user a chance to correct stale info, and prevents the AI from ignoring its own stored knowledge. Before web searches, surfacing is mandatory — the AI must show what it already knows before reaching for the web.
 
 ### Web Search
 
@@ -130,8 +136,8 @@ Key settings in `config.yaml`:
 
 | Setting | Default | What It Does |
 |---------|---------|-------------|
-| `conversation_model` | `claude-opus-4-5-20251101` | Model for chat |
-| `curator_model` | `claude-opus-4-5-20251101` | Model for knowledge extraction (Opus recommended) |
+| `conversation_model` | `claude-opus-4-6-20250610` | Model for chat |
+| `curator_model` | `claude-opus-4-6-20250610` | Model for knowledge extraction |
 | `max_context_tokens` | `200000` | Context window size |
 | `handover_threshold` | `0.70` | Trigger curator at this % of context |
 | `buffer_messages` | `20` | Recent messages carried across handovers |
@@ -140,13 +146,13 @@ Key settings in `config.yaml`:
 ## Known Limitations
 
 - **Knowledge retrieval** uses ChromaDB vector search (sentence-transformers all-MiniLM-L6-v2) for semantic matching. Scales well, but retrieval quality with very large knowledge stores (thousands of entries) is untested.
-- **Curator quality** is critical. We recommend Opus — Haiku tends to flatten nuance and lose subtle reasoning. The debug page lets you inspect and retire bad entries.
+- **Curator quality** is critical. Opus is the default and recommended model. The debug page lets you inspect and retire bad entries.
 - **Checkpoint drift** is theoretically possible over many months of rewrites. Not yet observed in practice.
 - **Passwords are basic.** SHA-256, no salt. This is "don't accidentally open each other's chat" security, not "defend against attackers" security. Don't reuse a real password.
 
 ## API Costs
 
-Typical usage with Opus for chat and Opus for curator:
+Typical usage with Opus for both chat and curator:
 
 | Activity | Approximate Cost |
 |----------|-----------------|

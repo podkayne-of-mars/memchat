@@ -38,10 +38,10 @@ def retrieve_knowledge(user_id: int, query: str) -> list[dict]:
 
 
 def format_knowledge_block(entries: list[dict]) -> str:
-    """Format knowledge entries into a natural text block for the system prompt.
+    """Format knowledge entries into a tagged block for the system prompt.
 
-    Returns a string suitable for injection after the checkpoint in the system
-    prompt. Returns empty string if no entries.
+    Each entry is formatted as: - [TYPE:category:DATE:SALIENCE] content
+    Returns empty string if no entries.
     """
     if not entries:
         return ""
@@ -49,43 +49,28 @@ def format_knowledge_block(entries: list[dict]) -> str:
     lines = ["[From previous conversations, you know the following about this user:]"]
 
     for entry in entries:
-        entry_type = entry.get("type", "fact")
-        topic = entry.get("topic", "")
+        tag = _format_tag(entry)
         content = entry.get("content", "")
-        confidence = entry.get("confidence", "medium")
-        date_str = _format_date(entry.get("created_at"))
-
-        prefix = _type_prefix(entry_type, date_str)
-        conf_note = f" (uncertain)" if confidence == "low" else ""
-
-        lines.append(f"- {prefix}{topic}: {content}{conf_note}")
+        lines.append(f"- {tag} {content}")
 
     return "\n".join(lines)
 
 
-def _format_date(created_at: str | None) -> str:
-    """Extract YYYY-MM-DD from a created_at timestamp string."""
-    if not created_at:
+def _format_date(raw: str | None) -> str:
+    """Extract YYYY-MM-DD from a timestamp or date string."""
+    if not raw:
         return ""
-    return created_at[:10]
+    return raw[:10]
 
 
-def _type_prefix(entry_type: str, date_str: str) -> str:
-    """Return a short readable prefix for the knowledge type, with date."""
-    label = {
-        "fact": "",
-        "opinion": "Preference",
-        "decision": "Decision",
-        "correction": "Correction",
-        "failed_approach": "Rejected approach",
-    }.get(entry_type, "")
-    if label and date_str:
-        return f"{label} ({date_str}) — "
-    if label:
-        return f"{label} — "
-    if date_str:
-        return f"({date_str}) "
-    return ""
+def _format_tag(entry: dict) -> str:
+    """Build a structured tag: [TYPE:category:DATE:SALIENCE]."""
+    entry_type = entry.get("type", "fact").upper()
+    category = entry.get("topic", "")
+    salience = (entry.get("salience") or "low").upper()
+    # Prefer event_date; fall back to created_at
+    date_str = _format_date(entry.get("event_date") or entry.get("created_at"))
+    return f"[{entry_type}:{category}:{date_str}:{salience}]"
 
 
 def _sanitise_fts_query(query: str) -> str:

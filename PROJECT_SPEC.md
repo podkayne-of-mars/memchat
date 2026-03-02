@@ -107,22 +107,27 @@ A separate API call using Opus for high-quality extraction.
 **Input:** The current conversation context (or the portion since last curation)
 
 **Prompt instructs the curator to extract:**
-- New factual claims, opinions, or preferences expressed by the user
-- New factual claims or conclusions from Claude responses
+- Facts about the user, their life, environment
+- Preferences, views, and tastes
+- Decisions with reasoning
 - Corrections to previously stored knowledge
-- Failed approaches or rejected ideas (with reasons)
-- Decisions made
+- Rejected approaches (with reasons why they failed)
+- Events and milestones
+- Project details and architecture
 - Updated checkpoint summarising current state
+
+Each entry is assigned a **salience** level:
+- **HIGH**: The user would be frustrated or confused if the AI forgot this. Preferences, decisions, corrections, rejected approaches, important personal facts.
+- **LOW**: Useful background context but not critical.
 
 **Output format:** Structured JSON entries, each with:
 ```json
 {
-  "type": "fact|opinion|decision|correction|failed_approach",
-  "topic": "short topic label",
+  "type": "fact|preference|decision|correction|rejected|event|project",
+  "category": "short consistent label",
   "content": "the actual knowledge entry",
-  "confidence": "high|medium|low",
-  "date": "2026-03-01",
-  "supersedes": null  // or ID of entry this replaces
+  "salience": "high|low",
+  "event_date": "YYYY-MM-DD or null"
 }
 ```
 
@@ -130,15 +135,14 @@ A separate API call using Opus for high-quality extraction.
 ```json
 {
   "summary": "Current state of ongoing discussions...",
-  "active_topics": ["topic1", "topic2"],
-  "updated_at": "2026-03-01T12:00:00"
+  "active_topics": ["topic1", "topic2"]
 }
 ```
 
-**Curator model:** Opus is recommended. Haiku is cheaper but tends to flatten nuance and lose subtle reasoning. The quality of extraction is the critical bottleneck for the entire memory system — this is not the place to economise.
+**Curator model:** Opus is the default and recommended model. The quality of extraction is the critical bottleneck for the entire memory system — this is not the place to economise.
 
 #### 6. Knowledge Store
-SQLite tables. Each entry tagged with user_id, type, topic, content, confidence, timestamps, and supersedes references.
+SQLite tables. Each entry tagged with user_id, type, category (topic), content, salience, event_date, timestamps, and supersedes references.
 
 **Key design principle:** Nothing gets deleted. Superseded entries get marked as superseded with a reference to what replaced them. Failed approaches stay forever with their failure reasons. This is the "map of where the mines are buried."
 
@@ -195,10 +199,11 @@ CREATE TABLE messages (
 CREATE TABLE knowledge (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('fact', 'opinion', 'decision', 'correction', 'failed_approach')),
+    type TEXT NOT NULL CHECK(type IN ('fact', 'preference', 'decision', 'correction', 'rejected', 'event', 'project')),
     topic TEXT NOT NULL,
     content TEXT NOT NULL,
-    confidence TEXT DEFAULT 'medium' CHECK(confidence IN ('high', 'medium', 'low')),
+    salience TEXT DEFAULT 'low' CHECK(salience IN ('high', 'low')),
+    event_date TEXT,
     status TEXT DEFAULT 'active' CHECK(status IN ('active', 'superseded', 'retired')),
     supersedes_id INTEGER REFERENCES knowledge(id),
     source_session_id TEXT,  -- which session this was extracted from
@@ -282,8 +287,8 @@ server:
 
 anthropic:
   api_key: "${ANTHROPIC_API_KEY}"  # env var, never in config file
-  conversation_model: "claude-opus-4-5-20251101"   # main chat model
-  curator_model: "claude-opus-4-5-20251101"        # extraction model (Opus recommended)
+  conversation_model: "claude-opus-4-6-20250610"   # main chat model
+  curator_model: "claude-opus-4-6-20250610"        # extraction model (Opus recommended)
   max_context_tokens: 200000       # model context window
   handover_threshold: 0.70         # trigger curator at 70% usage
 
@@ -350,7 +355,7 @@ memchat/
 ### Known Limitations
 
 - **Knowledge retrieval** uses ChromaDB vector search for semantic matching. Retrieval quality with very large knowledge stores (thousands of entries) is untested.
-- **Curator quality** is critical. Opus is recommended — Haiku tends to flatten nuance.
+- **Curator quality** is critical. Opus is the default and recommended model.
 - **Checkpoint drift** is theoretically possible over many months of rewrites. Not yet observed in practice.
 - **No mobile app.** Use the browser on your phone — it works fine.
 - **Passwords are basic.** SHA-256, no salt. This is "don't accidentally open each other's chat" security, not "defend against attackers" security.

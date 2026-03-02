@@ -16,8 +16,8 @@ class ServerConfig:
 @dataclass
 class AnthropicConfig:
     api_key: str = ""
-    conversation_model: str = "claude-sonnet-4-20250514"
-    curator_model: str = "claude-haiku-4-5-20251001"
+    conversation_model: str = "claude-opus-4-6-20250610"
+    curator_model: str = "claude-opus-4-6-20250610"
     max_context_tokens: int = 200_000
     handover_threshold: float = 0.70
     web_search: bool = False

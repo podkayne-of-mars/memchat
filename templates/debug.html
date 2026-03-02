@@ -49,7 +49,8 @@
             <th>Type</th>
             <th>Topic</th>
             <th>Content</th>
-            <th>Confidence</th>
+            <th>Salience</th>
+            <th>Event Date</th>
             <th>Status</th>
             <th>Created</th>
             <th></th>
@@ -60,7 +61,8 @@
             <td>{{ k.type }}</td>
             <td>{{ k.topic }}</td>
             <td>{{ k.content }}</td>
-            <td>{{ k.confidence }}</td>
+            <td>{{ k.salience }}</td>
+            <td>{{ k.event_date or '—' }}</td>
             <td id="knowledge-status-{{ k.id }}">{{ k.status }}</td>
             <td>{{ k.created_at }}</td>
             <td>

@@ -73,10 +73,11 @@ CREATE TABLE IF NOT EXISTS messages (
 CREATE TABLE IF NOT EXISTS knowledge (
     id INTEGER PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id),
-    type TEXT NOT NULL CHECK(type IN ('fact', 'opinion', 'decision', 'correction', 'failed_approach')),
+    type TEXT NOT NULL CHECK(type IN ('fact', 'preference', 'decision', 'correction', 'rejected', 'event', 'project')),
     topic TEXT NOT NULL,
     content TEXT NOT NULL,
-    confidence TEXT DEFAULT 'medium' CHECK(confidence IN ('high', 'medium', 'low')),
+    salience TEXT DEFAULT 'low' CHECK(salience IN ('high', 'low')),
+    event_date TEXT,
     status TEXT DEFAULT 'active' CHECK(status IN ('active', 'superseded', 'retired')),
     supersedes_id INTEGER REFERENCES knowledge(id),
     source_session_id TEXT,
@@ -161,6 +162,60 @@ def init_db() -> None:
         if "image_data" not in msg_cols:
             conn.execute("ALTER TABLE messages ADD COLUMN image_data TEXT")
             conn.execute("ALTER TABLE messages ADD COLUMN image_media_type TEXT")
+
+        # Migration: knowledge table — replace confidence with salience + event_date,
+        # update type taxonomy (opinion→preference, failed_approach→rejected, add event/project)
+        k_cols = [r[1] for r in conn.execute("PRAGMA table_info(knowledge)").fetchall()]
+        if "salience" not in k_cols:
+            conn.executescript("""
+                -- Drop FTS triggers and table first (they reference knowledge)
+                DROP TRIGGER IF EXISTS knowledge_ai;
+                DROP TRIGGER IF EXISTS knowledge_ad;
+                DROP TRIGGER IF EXISTS knowledge_au;
+                DROP TABLE IF EXISTS knowledge_fts;
+
+                -- Recreate with new schema
+                CREATE TABLE knowledge_new (
+                    id INTEGER PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    type TEXT NOT NULL CHECK(type IN ('fact', 'preference', 'decision', 'correction', 'rejected', 'event', 'project')),
+                    topic TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    salience TEXT DEFAULT 'low' CHECK(salience IN ('high', 'low')),
+                    event_date TEXT,
+                    status TEXT DEFAULT 'active' CHECK(status IN ('active', 'superseded', 'retired')),
+                    supersedes_id INTEGER REFERENCES knowledge(id),
+                    source_session_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+
+                INSERT INTO knowledge_new (id, user_id, type, topic, content, salience, event_date, status, supersedes_id, source_session_id, created_at)
+                SELECT id, user_id,
+                       CASE type
+                           WHEN 'opinion' THEN 'preference'
+                           WHEN 'failed_approach' THEN 'rejected'
+                           ELSE type
+                       END,
+                       topic, content,
+                       CASE type
+                           WHEN 'opinion' THEN 'high'
+                           WHEN 'decision' THEN 'high'
+                           WHEN 'correction' THEN 'high'
+                           WHEN 'failed_approach' THEN 'high'
+                           ELSE 'low'
+                       END,
+                       NULL,
+                       status, supersedes_id, source_session_id, created_at
+                FROM knowledge;
+
+                DROP TABLE knowledge;
+                ALTER TABLE knowledge_new RENAME TO knowledge;
+
+                CREATE INDEX idx_knowledge_user_status ON knowledge(user_id, status);
+            """)
+            # Recreate FTS table and triggers (they were dropped above)
+            conn.executescript(FTS_SCHEMA_SQL)
+            conn.executescript(FTS_TRIGGERS_SQL)
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +382,8 @@ def save_knowledge(
     entry_type: str,
     topic: str,
     content: str,
-    confidence: str = "medium",
+    salience: str = "low",
+    event_date: str | None = None,
     source_session_id: str | None = None,
     supersedes_id: int | None = None,
 ) -> int:
@@ -342,13 +398,13 @@ def save_knowledge(
             )
         cursor = conn.execute(
             """INSERT INTO knowledge
-               (user_id, type, topic, content, confidence, source_session_id, supersedes_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, entry_type, topic, content, confidence, source_session_id, supersedes_id),
+               (user_id, type, topic, content, salience, event_date, source_session_id, supersedes_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, entry_type, topic, content, salience, event_date, source_session_id, supersedes_id),
         )
         entry_id = cursor.lastrowid
 
-    vector_add(entry_id, user_id, topic, content)
+    vector_add(entry_id, user_id, topic, content, salience)
     return entry_id
 
 

@@ -97,7 +97,7 @@ def setup():
 async def run_curator():
     """Call the curator and print what it extracted."""
     print("=" * 70)
-    print("CALLING CURATOR (Haiku)...")
+    print("CALLING CURATOR (Opus)...")
     print("=" * 70)
     print()
 
