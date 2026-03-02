@@ -2,21 +2,21 @@
 
 A local chat client that gives Claude permanent memory. You chat, it remembers. Forever.
 
-## Status: Experimental
+## Status: Alpha
 
-This is an early-stage experiment in persistent AI memory. It works — we use it daily — but it has not been extensively tested at scale, has rough edges, and will evolve. Use it, break it, improve it. That's why it's here.
+This is an early-stage experiment in persistent AI memory. The core memory loop works but has not been extensively tested at scale, has rough edges, and will evolve. Use it, break it, improve it. That's why it's here.
 
 ## How This Was Built
 
 Memchat was vibe-coded. The architecture, design decisions, and direction are human. Every line of code was written by Claude Code, with a Claude Desktop instance acting as project manager. No human developer has reviewed the code line by line.
 
-## What It Does
+## What It's Designed To Do
 
-Memchat is a local web-based chat application that creates the illusion of a continuous, never-ending conversation with Claude. There is no "new chat" button. The conversation never clears, never degrades, and never forgets.
+Memchat is a local web-based chat application designed to create the illusion of a continuous, never-ending conversation with Claude. There is no "new chat" button. The conversation should never clear, never degrade, and never forget.
 
-Behind the scenes, the system manages Claude's context window invisibly. When the context fills up, a separate AI call silently extracts important information — facts, opinions, decisions, corrections, and failed approaches — into a local database. The next message starts a fresh API session, rebuilt from stored knowledge, a conversation checkpoint, and recent message history. The user never notices.
+Behind the scenes, the system manages Claude's context window invisibly. When the context fills up, a separate AI call silently extracts important information — facts, opinions, decisions, corrections, and failed approaches — into a local database. The next message starts a fresh API session, rebuilt from stored knowledge, a conversation checkpoint, and recent message history. Ideally, the user doesn't notice the transition.
 
-Over time, the AI accumulates genuine understanding of you: your preferences, your projects, your decisions, and — critically — the things you tried that didn't work. It gets more useful the longer you use it.
+Over time, the AI should accumulate genuine understanding of you: your preferences, your projects, your decisions, and — critically — the things you tried that didn't work. The goal is that it gets more useful the longer you use it.
 
 ## Architecture
 
