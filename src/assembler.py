@@ -178,7 +178,7 @@ def build_context(
 
 def _fit_knowledge_to_budget(entries: list[dict], max_tokens: int) -> str:
     """Build a knowledge block fitting as many entries as possible within budget."""
-    from src.knowledge import _type_prefix
+    from src.knowledge import _format_date, _type_prefix
 
     header = "[From previous conversations, you know the following about this user:]"
     lines = [header]
@@ -189,8 +189,9 @@ def _fit_knowledge_to_budget(entries: list[dict], max_tokens: int) -> str:
         topic = entry.get("topic", "")
         content = entry.get("content", "")
         confidence = entry.get("confidence", "medium")
+        date_str = _format_date(entry.get("created_at"))
 
-        prefix = _type_prefix(entry_type)
+        prefix = _type_prefix(entry_type, date_str)
         conf_note = " (uncertain)" if confidence == "low" else ""
         line = f"- {prefix}{topic}: {content}{conf_note}"
 

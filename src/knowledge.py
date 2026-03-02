@@ -53,8 +53,9 @@ def format_knowledge_block(entries: list[dict]) -> str:
         topic = entry.get("topic", "")
         content = entry.get("content", "")
         confidence = entry.get("confidence", "medium")
+        date_str = _format_date(entry.get("created_at"))
 
-        prefix = _type_prefix(entry_type)
+        prefix = _type_prefix(entry_type, date_str)
         conf_note = f" (uncertain)" if confidence == "low" else ""
 
         lines.append(f"- {prefix}{topic}: {content}{conf_note}")
@@ -62,15 +63,29 @@ def format_knowledge_block(entries: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def _type_prefix(entry_type: str) -> str:
-    """Return a short readable prefix for the knowledge type."""
-    return {
+def _format_date(created_at: str | None) -> str:
+    """Extract YYYY-MM-DD from a created_at timestamp string."""
+    if not created_at:
+        return ""
+    return created_at[:10]
+
+
+def _type_prefix(entry_type: str, date_str: str) -> str:
+    """Return a short readable prefix for the knowledge type, with date."""
+    label = {
         "fact": "",
-        "opinion": "Preference — ",
-        "decision": "Decision — ",
-        "correction": "Correction — ",
-        "failed_approach": "Rejected approach — ",
+        "opinion": "Preference",
+        "decision": "Decision",
+        "correction": "Correction",
+        "failed_approach": "Rejected approach",
     }.get(entry_type, "")
+    if label and date_str:
+        return f"{label} ({date_str}) — "
+    if label:
+        return f"{label} — "
+    if date_str:
+        return f"({date_str}) "
+    return ""
 
 
 def _sanitise_fts_query(query: str) -> str:

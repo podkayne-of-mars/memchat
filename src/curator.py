@@ -7,7 +7,6 @@ response, and writes knowledge entries + a new checkpoint to the database.
 
 import json
 import logging
-from datetime import date
 
 from src.anthropic_client import AnthropicError, complete_message
 from src.config import get_config
@@ -163,7 +162,6 @@ async def curate_session(user_id: int, session_id: str) -> dict:
     # Write knowledge entries
     knowledge_entries = data.get("knowledge", [])
     saved_count = 0
-    today = str(date.today())
 
     for entry in knowledge_entries:
         entry_type = entry.get("type", "fact")
