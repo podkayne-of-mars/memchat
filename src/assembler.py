@@ -54,7 +54,9 @@ def build_context(
     checkpoint = get_active_checkpoint(user_id)
     checkpoint_text = None
     if checkpoint:
-        checkpoint_text = f"[Current conversation state]\n{checkpoint['summary']}"
+        cp_date = (checkpoint.get("created_at") or "")[:10]
+        date_suffix = f" - as of {cp_date}" if cp_date else ""
+        checkpoint_text = f"[Current conversation state{date_suffix}]\n{checkpoint['summary']}"
         topics = checkpoint.get("active_topics")
         if topics:
             checkpoint_text += f"\n[Active topics: {topics}]"
