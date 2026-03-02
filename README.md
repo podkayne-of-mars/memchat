@@ -10,7 +10,7 @@ This is an early-stage experiment in persistent AI memory. It works — we use i
 
 Memchat was vibe-coded. The architecture, design decisions, and direction are human. Every line of code was written by Claude Code, with a Claude Desktop instance acting as project manager. No human developer has reviewed the code line by line.
 
-We're upfront about this because you deserve to know what you're looking at. The code works, it's tested by the AI that wrote it, and it runs in production for us. If that bothers you, fair enough. If you want to improve it, even better — that's why it's GPL.
+We're upfront about this because you deserve to know what you're looking at. The code works and it's tested by the AI that wrote it. If that bothers you, fair enough. If you want to improve it, even better — that's why it's GPL.
 
 ## What It Does
 
