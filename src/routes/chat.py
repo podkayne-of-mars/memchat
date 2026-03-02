@@ -262,8 +262,11 @@ async def _chat_stream(
             })
             current_text_parts = []
 
-        # If no tool calls, we're done streaming
-        if not pending_tool_uses:
+        # Only continue the loop if the model explicitly asked for tool results
+        # (stop_reason == "tool_use") AND we have tool calls to execute.
+        # Web search responses may include content blocks that look like tool_use
+        # but have stop_reason "end_turn" — those should not re-trigger the loop.
+        if stop_reason != "tool_use" or not pending_tool_uses:
             break
 
         # --- Execute tool calls and loop ---
