@@ -25,8 +25,15 @@ TEXT_EXTENSIONS = {
 }
 
 
-def read_file(path: str) -> str:
+def read_file(
+    path: str,
+    from_line: int | None = None,
+    to_line: int | None = None,
+) -> str:
     """Read a file by absolute or relative path.
+
+    Optional from_line/to_line (0-based, inclusive) limit output to a line
+    range.  For .gz transcript files this maps directly to JSONL line indices.
 
     Returns file contents as text, a directory listing, or an error message.
     Never raises — all errors are returned as strings.
@@ -45,7 +52,7 @@ def read_file(path: str) -> str:
 
     # Gzip — decompress transparently
     if target.suffix.lower() == ".gz":
-        return _read_gzip(target, path)
+        return _read_gzip(target, path, from_line, to_line)
 
     # Binary check
     if _is_binary(target):
@@ -60,13 +67,20 @@ def read_file(path: str) -> str:
         logger.warning("Error reading %s: %s", target, exc)
         return f"Error reading file: {exc}"
 
+    text = _apply_line_range(text, from_line, to_line)
+
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + "\n\n[Content truncated]"
 
     return text
 
 
-def _read_gzip(target: Path, original_path: str) -> str:
+def _read_gzip(
+    target: Path,
+    original_path: str,
+    from_line: int | None = None,
+    to_line: int | None = None,
+) -> str:
     """Decompress a .gz file and return its text contents."""
     try:
         with gzip.open(target, "rt", encoding="utf-8", errors="replace") as f:
@@ -77,10 +91,26 @@ def _read_gzip(target: Path, original_path: str) -> str:
         logger.warning("Error reading gzip %s: %s", target, exc)
         return f"Error reading gzip file: {exc}"
 
+    text = _apply_line_range(text, from_line, to_line)
+
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + "\n\n[Content truncated]"
 
     return text
+
+
+def _apply_line_range(
+    text: str,
+    from_line: int | None,
+    to_line: int | None,
+) -> str:
+    """Return only lines from_line..to_line (0-based, inclusive)."""
+    if from_line is None and to_line is None:
+        return text
+    lines = text.splitlines(keepends=True)
+    start = max(from_line or 0, 0)
+    end = min((to_line or len(lines) - 1) + 1, len(lines))
+    return "".join(lines[start:end])
 
 
 def _is_binary(path: Path) -> bool:

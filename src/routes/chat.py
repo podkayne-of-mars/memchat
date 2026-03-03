@@ -170,7 +170,9 @@ def _build_tools() -> list[dict] | None:
         "description": (
             "Read the contents of a local file or list a directory. Use this "
             "when the user asks about code, config, or any file. Takes an "
-            "absolute path or a path relative to the working directory."
+            "absolute path or a path relative to the working directory. "
+            "For large files, use from_line/to_line to read only a range of "
+            "lines (0-based, inclusive) instead of the entire file."
         ),
         "input_schema": {
             "type": "object",
@@ -178,7 +180,15 @@ def _build_tools() -> list[dict] | None:
                 "path": {
                     "type": "string",
                     "description": "Absolute or relative file/directory path",
-                }
+                },
+                "from_line": {
+                    "type": "integer",
+                    "description": "First line to return (0-based). Omit to start from the beginning.",
+                },
+                "to_line": {
+                    "type": "integer",
+                    "description": "Last line to return (0-based, inclusive). Omit to read to the end.",
+                },
             },
             "required": ["path"],
         },
@@ -284,9 +294,11 @@ async def _chat_stream(
                 result_text = await fetch_url(url)
             elif tool["name"] == "read_file":
                 file_path = tool["input"].get("path", "")
-                logger.info("Reading file: %s", file_path)
+                from_line = tool["input"].get("from_line")
+                to_line = tool["input"].get("to_line")
+                logger.info("Reading file: %s (lines %s–%s)", file_path, from_line, to_line)
                 yield f"data: {json.dumps({'type': 'reading_file', 'path': file_path})}\n\n"
-                result_text = read_file(file_path)
+                result_text = read_file(file_path, from_line=from_line, to_line=to_line)
             else:
                 result_text = f"Unknown tool: {tool['name']}"
                 logger.warning("Unknown tool called: %s", tool["name"])
