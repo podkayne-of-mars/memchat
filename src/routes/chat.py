@@ -14,6 +14,7 @@ from src.auth import get_current_user_id, require_login
 from src.config import get_config
 from src.counter import check_threshold
 from src.curator import curate_session
+from src.transcript import save_transcript
 from src.database import (
     create_session,
     end_session,
@@ -327,9 +328,12 @@ async def _chat_stream(
             session_id, cum_in + cum_out, cum_in, cum_out,
         )
 
+        # Save transcript before curation so the curator can reference it
+        transcript_file = save_transcript(session_id)
+
         # Run the curator to extract knowledge before ending the session
         try:
-            result = await curate_session(user_id, session_id)
+            result = await curate_session(user_id, session_id, transcript_file=transcript_file)
             logger.info(
                 "Curator completed for session %s: %d entries extracted, checkpoint: %s",
                 session_id,

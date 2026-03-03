@@ -263,6 +263,12 @@ def init_db() -> None:
             conn.executescript(FTS_SCHEMA_SQL)
             conn.executescript(FTS_TRIGGERS_SQL)
 
+        # Migration: add source_ref column to knowledge table
+        # (re-check columns since earlier migrations may have rebuilt the table)
+        k_cols_now = [r[1] for r in conn.execute("PRAGMA table_info(knowledge)").fetchall()]
+        if "source_ref" not in k_cols_now:
+            conn.execute("ALTER TABLE knowledge ADD COLUMN source_ref TEXT")
+
 
 # ---------------------------------------------------------------------------
 # Query helpers — thin wrappers, one per operation
@@ -433,6 +439,7 @@ def save_knowledge(
     event_date: str | None = None,
     source_session_id: str | None = None,
     supersedes_id: int | None = None,
+    source_ref: str | None = None,
 ) -> int:
     """Insert a knowledge entry. If it supersedes another, mark the old one."""
     from src.vector_store import add_knowledge as vector_add
@@ -445,9 +452,9 @@ def save_knowledge(
             )
         cursor = conn.execute(
             """INSERT INTO knowledge
-               (user_id, type, topic, content, continuity, durable, event_date, source_session_id, supersedes_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (user_id, entry_type, topic, content, continuity, durable, event_date, source_session_id, supersedes_id),
+               (user_id, type, topic, content, continuity, durable, event_date, source_session_id, supersedes_id, source_ref)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (user_id, entry_type, topic, content, continuity, durable, event_date, source_session_id, supersedes_id, source_ref),
         )
         entry_id = cursor.lastrowid
 

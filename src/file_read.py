@@ -1,5 +1,6 @@
 """Read local files for the read_file tool."""
 
+import gzip
 import logging
 from pathlib import Path
 
@@ -42,6 +43,10 @@ def read_file(path: str) -> str:
     if target.is_dir():
         return _list_directory(target)
 
+    # Gzip — decompress transparently
+    if target.suffix.lower() == ".gz":
+        return _read_gzip(target, path)
+
     # Binary check
     if _is_binary(target):
         return "Cannot read binary file."
@@ -54,6 +59,23 @@ def read_file(path: str) -> str:
     except Exception as exc:
         logger.warning("Error reading %s: %s", target, exc)
         return f"Error reading file: {exc}"
+
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS] + "\n\n[Content truncated]"
+
+    return text
+
+
+def _read_gzip(target: Path, original_path: str) -> str:
+    """Decompress a .gz file and return its text contents."""
+    try:
+        with gzip.open(target, "rt", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except PermissionError:
+        return f"Permission denied: {original_path}"
+    except Exception as exc:
+        logger.warning("Error reading gzip %s: %s", target, exc)
+        return f"Error reading gzip file: {exc}"
 
     if len(text) > MAX_CHARS:
         text = text[:MAX_CHARS] + "\n\n[Content truncated]"

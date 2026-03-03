@@ -91,6 +91,13 @@ and next steps. Also list the active discussion topics as short labels.
 If there is nothing worth extracting (e.g. the conversation was just \
 greetings or small talk), return empty arrays — do NOT invent entries.
 
+## Source references
+
+Messages in the conversation are numbered with indices [0], [1], etc. \
+When an entry summarises reasoning, detailed discussion, or theory where \
+the full original context would be valuable, add a source_ref pointing to \
+the relevant message range. Self-contained facts and preferences don't need it.
+
 Return this exact JSON structure:
 {
   "knowledge": [
@@ -100,7 +107,8 @@ Return this exact JSON structure:
       "content": "the actual knowledge entry — be specific and self-contained",
       "continuity": "high|low",
       "durable": "high|low",
-      "event_date": "YYYY-MM-DD or null"
+      "event_date": "YYYY-MM-DD or null",
+      "source_ref": {"from_msg": N, "to_msg": M} or null
     }
   ],
   "checkpoint": {
@@ -112,20 +120,26 @@ Return this exact JSON structure:
 
 
 def _build_curator_messages(session_messages: list[dict]) -> list[dict]:
-    """Format session messages into the conversation block for the curator prompt."""
+    """Format session messages into the conversation block for the curator prompt.
+
+    Each user/assistant message is numbered with a sequential index so the
+    curator can reference specific message ranges in source_ref fields.
+    """
     lines = []
+    idx = 0
     for msg in session_messages:
         role = msg["role"]
         if role == "system":
             continue
         speaker = "User" if role == "user" else "Assistant"
-        lines.append(f"{speaker}: {msg['content']}")
+        lines.append(f"[{idx}] {speaker}: {msg['content']}")
+        idx += 1
 
     conversation_text = "\n\n".join(lines)
     return [{"role": "user", "content": f"Here is the conversation to analyse:\n\n{conversation_text}"}]
 
 
-async def curate_session(user_id: int, session_id: str) -> dict:
+async def curate_session(user_id: int, session_id: str, transcript_file: str | None = None) -> dict:
     """Extract knowledge and checkpoint from a session's messages.
 
     Returns a summary dict: {"knowledge_count": N, "checkpoint_summary": "..."}.
@@ -211,6 +225,17 @@ async def curate_session(user_id: int, session_id: str) -> dict:
         if not event_date or not isinstance(event_date, str):
             event_date = None
 
+        # Build source_ref if the curator provided message indices and we have a transcript
+        source_ref = None
+        if transcript_file and entry.get("source_ref"):
+            ref = entry["source_ref"]
+            if isinstance(ref, dict) and "from_msg" in ref and "to_msg" in ref:
+                source_ref = json.dumps({
+                    "file": transcript_file,
+                    "from_msg": ref["from_msg"],
+                    "to_msg": ref["to_msg"],
+                })
+
         save_knowledge(
             user_id=user_id,
             entry_type=entry_type,
@@ -220,6 +245,7 @@ async def curate_session(user_id: int, session_id: str) -> dict:
             durable=durable,
             event_date=event_date,
             source_session_id=session_id,
+            source_ref=source_ref,
         )
         saved_count += 1
         logger.info("  Curator extracted [%s:C=%s:D=%s] %s", entry_type, continuity, durable, content[:80])
