@@ -1,5 +1,6 @@
 """Chat endpoints — send messages, stream responses, retrieve history."""
 
+import asyncio
 import json
 import uuid
 import logging
@@ -340,26 +341,31 @@ async def _chat_stream(
             session_id, cum_in + cum_out, cum_in, cum_out,
         )
 
-        # Save transcript before curation so the curator can reference it
+        # Save transcript synchronously — fast disk I/O, needed before curation
         transcript_file = save_transcript(session_id)
 
-        # Run the curator to extract knowledge before ending the session
-        try:
-            result = await curate_session(user_id, session_id, transcript_file=transcript_file)
-            logger.info(
-                "Curator completed for session %s: %d entries extracted, checkpoint: %s",
-                session_id,
-                result.get("knowledge_count", 0),
-                result.get("checkpoint_summary", "")[:100] or "(none)",
-            )
-        except Exception as exc:
-            logger.error("Curator failed for session %s: %s", session_id, exc)
-
+        # End session immediately so the next message gets a fresh one
         end_session(session_id, "token_limit", tokens_used=cum_in + cum_out)
         _session_tokens.pop(session_id, None)
-        # Next message will auto-create a fresh session via _get_or_create_session
+
+        # Curator runs in the background — don't block the user
+        asyncio.create_task(_run_curator(user_id, session_id, transcript_file))
 
     yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'session_id': session_id, 'input_tokens': total_input_tokens, 'output_tokens': total_output_tokens, 'handover': handover})}\n\n"
+
+
+async def _run_curator(user_id: int, session_id: str, transcript_file: str | None) -> None:
+    """Run the curator as a background task so the UI isn't blocked."""
+    try:
+        result = await curate_session(user_id, session_id, transcript_file=transcript_file)
+        logger.info(
+            "Curator completed for session %s: %d entries extracted, checkpoint: %s",
+            session_id,
+            result.get("knowledge_count", 0),
+            result.get("checkpoint_summary", "")[:100] or "(none)",
+        )
+    except Exception as exc:
+        logger.error("Curator failed for session %s: %s", session_id, exc)
 
 
 async def _error_stream(detail: str):
