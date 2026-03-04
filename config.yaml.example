@@ -3,7 +3,7 @@ server:
   port: 8080
 
 anthropic:
-  # API key loaded from ANTHROPIC_API_KEY env var — never stored here
+  # API key loaded from MEMCHAT_API_KEY env var — never stored here
   conversation_model: "claude-opus-4-6-20250610"
   curator_model: "claude-opus-4-6-20250610"
   max_context_tokens: 200000

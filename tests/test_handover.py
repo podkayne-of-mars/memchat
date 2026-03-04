@@ -5,7 +5,7 @@ and prints everything it extracted. Run from the project root:
 
     py tests/test_handover.py
 
-Requires ANTHROPIC_API_KEY in the environment.
+Requires MEMCHAT_API_KEY in the environment.
 """
 
 import asyncio
@@ -162,8 +162,8 @@ def test_next_context():
 async def main():
     cfg = get_config()
     if not cfg.anthropic.api_key:
-        print("ERROR: ANTHROPIC_API_KEY not set in environment.")
-        print("Set it and re-run:  export ANTHROPIC_API_KEY='sk-ant-...'")
+        print("ERROR: MEMCHAT_API_KEY not set in environment.")
+        print("Set it and re-run:  export MEMCHAT_API_KEY='sk-ant-...'")
         sys.exit(1)
 
     print(f"Using curator model: {cfg.anthropic.curator_model}")

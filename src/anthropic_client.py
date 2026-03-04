@@ -60,7 +60,7 @@ async def stream_message(
     cfg = get_config().anthropic
 
     if not cfg.api_key:
-        yield StreamDelta(type="error", text="ANTHROPIC_API_KEY not set. Add it to your environment variables.")
+        yield StreamDelta(type="error", text="MEMCHAT_API_KEY not set. Add it to your environment variables.")
         return
 
     if model is None:
@@ -238,7 +238,7 @@ def _parse_api_error(status_code: int, body: str) -> str:
         msg = body
 
     if status_code == 401:
-        return f"Authentication failed — check your ANTHROPIC_API_KEY. ({msg})"
+        return f"Authentication failed — check your MEMCHAT_API_KEY. ({msg})"
     if status_code == 429:
         return f"Rate limited by Anthropic. Wait a moment and try again. ({msg})"
     if status_code == 529:

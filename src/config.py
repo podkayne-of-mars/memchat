@@ -77,7 +77,7 @@ def load_config(config_path: str = "config.yaml") -> AppConfig:
     )
 
     # API key always comes from environment
-    cfg.anthropic.api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    cfg.anthropic.api_key = os.environ.get("MEMCHAT_API_KEY", "")
 
     return cfg
 

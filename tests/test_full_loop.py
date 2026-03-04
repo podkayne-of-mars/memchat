@@ -10,7 +10,7 @@ Exercises the complete memory pipeline:
 Run from project root:
     py tests/test_full_loop.py
 
-Requires ANTHROPIC_API_KEY in the environment.
+Requires MEMCHAT_API_KEY in the environment.
 """
 
 import asyncio
@@ -179,7 +179,7 @@ async def phase_3_response(system, messages):
 async def main():
     cfg = get_config()
     if not cfg.anthropic.api_key:
-        print("ERROR: ANTHROPIC_API_KEY not set.")
+        print("ERROR: MEMCHAT_API_KEY not set.")
         sys.exit(1)
 
     print(f"Curator model: {cfg.anthropic.curator_model}")

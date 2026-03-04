@@ -299,7 +299,7 @@ server:
   port: 8080
 
 anthropic:
-  api_key: "${ANTHROPIC_API_KEY}"  # env var, never in config file
+  api_key: "${MEMCHAT_API_KEY}"  # env var, never in config file
   conversation_model: "claude-opus-4-6-20250610"   # main chat model
   curator_model: "claude-opus-4-6-20250610"        # extraction model (Opus recommended)
   max_context_tokens: 200000       # model context window

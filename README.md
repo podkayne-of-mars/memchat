@@ -126,7 +126,7 @@ cd memchat
 pip install -r requirements.txt
 cp config.yaml.example config.yaml
 # Edit config.yaml if needed
-export ANTHROPIC_API_KEY="your-key-here"
+export MEMCHAT_API_KEY="your-key-here"
 python -m uvicorn src.main:app --host 127.0.0.1 --port 8080
 ```
 
