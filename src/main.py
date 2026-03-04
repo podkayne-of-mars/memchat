@@ -13,6 +13,7 @@ from src.config import get_config
 from src.database import init_db
 from src.vector_store import init_vector_store
 from src.routes import chat, debug, users, settings
+from src.routes.chat import graceful_shutdown
 
 SECRET_FILE = Path("data/.session_secret")
 
@@ -33,6 +34,7 @@ async def lifespan(app: FastAPI):
     init_db()
     init_vector_store()
     yield
+    await graceful_shutdown()
 
 
 app = FastAPI(title="memchat", lifespan=lifespan)

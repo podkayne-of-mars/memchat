@@ -369,6 +369,15 @@ def get_active_session(user_id: int) -> dict | None:
         return dict(row) if row else None
 
 
+def get_all_active_sessions() -> list[dict]:
+    """Return all sessions that haven't ended (across all users)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM sessions WHERE ended_at IS NULL ORDER BY started_at"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 def end_session(
     session_id: str, end_reason: str, tokens_used: int | None = None
 ) -> None:

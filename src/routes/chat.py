@@ -20,6 +20,7 @@ from src.database import (
     create_session,
     end_session,
     get_active_session,
+    get_all_active_sessions,
     get_recent_messages,
     get_user,
     save_message,
@@ -371,6 +372,39 @@ async def _run_curator(user_id: int, session_id: str, transcript_file: str | Non
         )
     except Exception as exc:
         logger.error("Curator failed for session %s: %s", session_id, exc)
+
+
+async def graceful_shutdown() -> None:
+    """Save transcripts and curate all active sessions before the process exits.
+
+    Called from the lifespan handler on shutdown. Also waits for any
+    background curator tasks that are already in flight.
+    """
+    # 1. Process any active sessions that haven't been curated yet
+    active = get_all_active_sessions()
+    if active:
+        logger.info("Graceful shutdown: processing %d active session(s)", len(active))
+    for session in active:
+        sid = session["id"]
+        uid = session["user_id"]
+        try:
+            transcript_file = save_transcript(sid)
+            end_session(sid, "manual")
+            _session_tokens.pop(sid, None)
+            result = await curate_session(uid, sid, transcript_file=transcript_file)
+            logger.info(
+                "Shutdown curator for session %s: %d entries",
+                sid, result.get("knowledge_count", 0),
+            )
+        except Exception as exc:
+            logger.error("Shutdown curator failed for session %s: %s", sid, exc)
+
+    # 2. Wait for any background curator tasks already running
+    if _background_tasks:
+        logger.info("Graceful shutdown: waiting for %d background task(s)", len(_background_tasks))
+        await asyncio.gather(*_background_tasks, return_exceptions=True)
+
+    logger.info("Graceful shutdown complete.")
 
 
 async def _error_stream(detail: str):
