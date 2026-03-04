@@ -39,7 +39,7 @@ templates = Jinja2Templates(directory="templates")
 _session_tokens: dict[str, tuple[int, int]] = {}
 
 # Hold references to background curator tasks so they don't get GC'd mid-flight.
-_background_tasks: set[asyncio.Task] = {}
+_background_tasks: set[asyncio.Task] = set()
 
 
 def _get_or_create_session(user_id: int) -> str:
