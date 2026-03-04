@@ -91,15 +91,16 @@ The assembler must respect token limits. Priority order if space is tight:
 #### 4. Session Manager
 Orchestrates the invisible handover:
 1. Token counter flags session approaching limit
-2. After the current response is delivered to the user, BEFORE processing the next user message:
-   a. Send current session context to the Curator
-   b. Curator extracts knowledge entries and updated checkpoint
-   c. Write extracted data to the knowledge store and checkpoint table
-   d. Start a fresh API session — Context Assembler builds from scratch
-3. The user's next message gets a fresh, clean context with curated knowledge
+2. After the current response is delivered to the user:
+   a. Save the full session transcript as gzipped JSONL to `data/transcripts/`
+   b. End the session in the database
+   c. Fire the Curator as a background task (`asyncio.create_task`) — UI unblocks immediately
+   d. Curator extracts knowledge entries (with optional `source_ref` to transcript) and updated checkpoint
+   e. Writes extracted data to the knowledge store and checkpoint table
+3. The user's next message starts a fresh API session — Context Assembler builds from scratch
 4. The conversation buffer ensures the last N messages bridge the gap
 
-**Critical requirement:** The user must never notice the handover. Response time should feel normal. The curator call happens in the background or is fast enough to be imperceptible.
+**Critical requirement:** The user must never notice the handover. The curator runs in the background so the UI is never blocked during extraction.
 
 #### 5. Curator
 A separate API call using Opus for high-quality extraction.
@@ -129,7 +130,8 @@ Each entry is assigned two **retention dimensions**:
   "content": "the actual knowledge entry",
   "continuity": "high|low",
   "durable": "high|low",
-  "event_date": "YYYY-MM-DD or null"
+  "event_date": "YYYY-MM-DD or null",
+  "source_ref": {"from_msg": N, "to_msg": M} or null
 }
 ```
 
@@ -140,6 +142,8 @@ Each entry is assigned two **retention dimensions**:
   "active_topics": ["topic1", "topic2"]
 }
 ```
+
+**Source references:** The curator prompt numbers each message with a sequential index (`[0]`, `[1]`, etc.). When an entry summarises reasoning, detailed discussion, or theory where the full context would be valuable, the curator adds a `source_ref` with the message range. The save loop combines this with the transcript filename to build the full reference stored in the knowledge table.
 
 **Curator model:** Opus is the default and recommended model. The quality of extraction is the critical bottleneck for the entire memory system — this is not the place to economise.
 
@@ -157,9 +161,14 @@ When enabled, Claude can search the web in real-time using Anthropic's built-in 
 Claude can fetch and read web pages directly when you share a URL. Useful for discussing articles, documentation, or any web content without copy-pasting.
 
 #### 9. Local File Reading
-Claude can read files from your local machine when you provide a path. Useful for reviewing code, configs, logs, or documents without pasting content into chat.
+Claude can read files from your local machine when you provide a path. Supports optional `from_line`/`to_line` parameters to read a specific line range instead of the whole file. Gzip files (`.gz`) are decompressed transparently — this is how Claude reads session transcripts.
 
-#### 10. Image Input
+#### 10. Session Transcripts
+Full session transcripts are saved as gzipped JSONL in `data/transcripts/` at handover time (before curation). Each line: `{"index": N, "role": "user"|"assistant", "content": "..."}`. The index is sequential among user/assistant messages only. Filename format: `session_YYYY-MM-DD_HH-MM.txt.gz` (from the first message timestamp).
+
+Knowledge entries with a `source_ref` point to a specific message range in a transcript file. The system prompt instructs Claude to use `read_file` with `from_line`/`to_line` matching `from_msg`/`to_msg` to retrieve the original context on demand.
+
+#### 11. Image Input
 Users can attach one image per message via paste, drag-and-drop, or file upload. The image is sent to the Anthropic API as a base64 content block alongside the text. Supported types: JPEG, PNG, GIF, WebP (max 10 MB). Images are stored in the messages table (`image_data`, `image_media_type` columns) and rendered inline in conversation history. Only the new message includes the image — buffer messages exclude images to conserve token budget.
 
 ---
@@ -210,6 +219,7 @@ CREATE TABLE knowledge (
     status TEXT DEFAULT 'active' CHECK(status IN ('active', 'superseded', 'retired')),
     supersedes_id INTEGER REFERENCES knowledge(id),
     source_session_id TEXT,  -- which session this was extracted from
+    source_ref TEXT,         -- JSON: {"file": "...", "from_msg": N, "to_msg": M}
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -325,12 +335,15 @@ memchat/
 │   ├── curator.py           # knowledge extraction prompts and processing
 │   ├── knowledge.py         # knowledge store queries and management
 │   ├── anthropic_client.py  # Anthropic API wrapper
-│   ├── file_read.py         # local file reading capability
+│   ├── system_prompt.py     # hardcoded system prompt (not user-editable)
+│   ├── transcript.py        # session transcript storage (gzipped JSONL)
+│   ├── file_read.py         # local file reading (with gzip and line-range support)
 │   ├── url_fetch.py         # URL fetching capability
 │   ├── vector_store.py      # ChromaDB vector search for knowledge retrieval
 │   └── routes/
 │       ├── __init__.py
 │       ├── chat.py          # chat endpoints (send message, get history)
+│       ├── debug.py         # debug page (knowledge entries, checkpoints, sessions)
 │       ├── users.py         # user management endpoints
 │       └── settings.py      # persona editing, config viewing
 ├── static/
@@ -349,8 +362,10 @@ memchat/
 │   ├── test_curator.py
 │   ├── test_counter.py
 │   └── test_knowledge.py
-└── data/                    # SQLite DB lives here (gitignored)
-    └── .gitkeep
+└── data/                    # local data (gitignored)
+    ├── immortalchat.db      # SQLite database
+    ├── chromadb/             # ChromaDB vector store
+    └── transcripts/          # gzipped session transcripts
 ```
 
 ---

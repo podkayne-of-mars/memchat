@@ -37,6 +37,9 @@ templates = Jinja2Templates(directory="templates")
 # Reset when a session ends. Good enough for Phase 1 — single process.
 _session_tokens: dict[str, tuple[int, int]] = {}
 
+# Hold references to background curator tasks so they don't get GC'd mid-flight.
+_background_tasks: set[asyncio.Task] = {}
+
 
 def _get_or_create_session(user_id: int) -> str:
     """Return an active session id for the user, creating one if none exists."""
@@ -349,7 +352,9 @@ async def _chat_stream(
         _session_tokens.pop(session_id, None)
 
         # Curator runs in the background — don't block the user
-        asyncio.create_task(_run_curator(user_id, session_id, transcript_file))
+        task = asyncio.create_task(_run_curator(user_id, session_id, transcript_file))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
     yield f"data: {json.dumps({'type': 'done', 'message_id': msg_id, 'session_id': session_id, 'input_tokens': total_input_tokens, 'output_tokens': total_output_tokens, 'handover': handover})}\n\n"
 

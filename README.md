@@ -72,7 +72,9 @@ Over time, the AI should accumulate genuine understanding of you: your preferenc
 
 Each entry is tagged with type, category, date, and two retention dimensions: **continuity** (HIGH/LOW — needed to resume current work, decays when resolved) and **durable** (HIGH/LOW — matters about the user long-term, doesn't decay). Nothing is ever deleted — superseded entries are marked as such, preserving a full audit trail. Rejected approaches are explicitly preserved because they're the most expensive knowledge to lose.
 
-The Curator also writes a narrative checkpoint — a 2-4 sentence summary of the current conversation state.
+The Curator also writes a narrative checkpoint — a 2-4 sentence summary of the current conversation state. Curation runs as a background task so the UI is never blocked during handover.
+
+**Transcript storage:** Before curation, the full session transcript is saved as a gzipped JSONL file in `data/transcripts/`. The curator can tag knowledge entries with a `source_ref` pointing to the specific message range in the transcript that the entry was extracted from. This lets Claude retrieve the original detailed context on demand via the `read_file` tool, instead of relying solely on the compressed summary.
 
 The next user message starts a fresh API session. The Context Assembler rebuilds from: persona + checkpoint + relevant knowledge entries (via ChromaDB vector search) + recent messages. The user never notices the transition.
 
@@ -101,7 +103,7 @@ Claude can fetch and read web pages directly when you share a URL. Useful for di
 
 ### Local File Reading
 
-Claude can read files from your local machine when you provide a path. Useful for reviewing code, configs, logs, or documents without pasting content into chat.
+Claude can read files from your local machine when you provide a path. Supports optional line-range parameters (`from_line`/`to_line`) to read a specific slice of a file instead of the whole thing. Gzip files (`.gz`) are decompressed transparently — this is how Claude reads session transcripts without special handling.
 
 ### Image Support
 
