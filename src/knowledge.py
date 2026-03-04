@@ -52,7 +52,11 @@ def format_knowledge_block(entries: list[dict]) -> str:
     for entry in entries:
         tag = _format_tag(entry)
         content = entry.get("content", "")
-        lines.append(f"- {tag} {content}")
+        line = f"- {tag} {content}"
+        source_ref = entry.get("source_ref")
+        if source_ref:
+            line += f"\n  source_ref: {source_ref}"
+        lines.append(line)
 
     return "\n".join(lines)
 

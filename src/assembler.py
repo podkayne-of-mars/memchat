@@ -190,6 +190,9 @@ def _fit_knowledge_to_budget(entries: list[dict], max_tokens: int) -> str:
         tag = _format_tag(entry)
         content = entry.get("content", "")
         line = f"- {tag} {content}"
+        source_ref = entry.get("source_ref")
+        if source_ref:
+            line += f"\n  source_ref: {source_ref}"
 
         line_tokens = count_text(line)
         if tokens_used + line_tokens > max_tokens:
