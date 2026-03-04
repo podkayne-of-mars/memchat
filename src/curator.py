@@ -280,14 +280,12 @@ def _parse_curator_response(raw: str) -> dict:
     """Parse the curator's JSON response, handling common LLM output quirks."""
     text = raw.strip()
 
-    # Strip markdown fences if the model ignored our instructions
-    if text.startswith("```"):
-        # Remove opening fence (with optional language tag)
-        first_newline = text.index("\n")
-        text = text[first_newline + 1:]
-        if text.endswith("```"):
-            text = text[:-3]
-        text = text.strip()
+    # Strip preamble text and markdown fences — find the actual JSON object.
+    # The model sometimes ignores "no preamble" and writes prose before the JSON.
+    brace_start = text.find("{")
+    brace_end = text.rfind("}")
+    if brace_start != -1 and brace_end > brace_start:
+        text = text[brace_start:brace_end + 1]
 
     data = json.loads(text)
 
